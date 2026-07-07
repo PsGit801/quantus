@@ -141,12 +141,21 @@ def _make_trade(p, entry, stop, target, exit_date, exit_price, bars, outcome) ->
 
 
 def backtest_ticker(
-    df: pd.DataFrame, ticker: str, timeframe: str, cfg: DetectionConfig, bt: BacktestConfig
+    df: pd.DataFrame,
+    ticker: str,
+    timeframe: str,
+    cfg: DetectionConfig,
+    bt: BacktestConfig,
+    mtf_filter=None,
 ) -> list[Trade]:
+    """Backtest one ticker. `mtf_filter(confirm_date)->bool`, if given, gates signals
+    (multi-timeframe confirmation) so the backtest matches live behavior."""
     if df.empty:
         return []
     trades = []
     for sig in find_signals(df, ticker, timeframe, cfg):
+        if mtf_filter is not None and not mtf_filter(sig.confirm_date):
+            continue
         tr = simulate_trade(df, sig, bt)
         if tr is not None:
             trades.append(tr)

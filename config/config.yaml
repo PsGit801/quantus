@@ -36,6 +36,13 @@ detection:
   volume_avg_window: 20              # bars used for the average-volume baseline
   volume_factor: 1.5                 # breakout volume >= this x average (sweep-validated; holds out-of-sample)
 
+# Multi-timeframe confirmation: only fire a daily alert when the weekly trend agrees
+# (weekly close above its SMA). Weekly alerts are not gated (they are the higher timeframe).
+mtf:
+  require: true
+  higher_timeframe: "1wk"
+  sma_window: 30          # weekly uptrend = close > 30-week SMA
+
 # Position sizing used for the "suggested size" line in alerts and the $ backtest.
 risk:
   account_equity: 10000.0    # notional account size for sizing suggestions

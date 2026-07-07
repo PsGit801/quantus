@@ -143,6 +143,22 @@ side by side. **Read it right:** a combo whose OOS metrics collapse was overfit 
 broad *plateau* of settings that hold up in both samples, not a single sharp peak. The sweep finds
 candidates — it doesn't prove an edge. Any promising combo goes into `config.yaml` for live use.
 
+## Multi-timeframe confirmation
+
+A daily double-bottom is higher-conviction when the weekly trend agrees. With `mtf.require: true`
+(config), a **daily** alert only fires if the weekly close is above its `sma_window`-period SMA at the
+confirmation date (weekly alerts aren't gated — they *are* the higher timeframe). If the weekly
+disagrees the daily signal is suppressed (not re-alerted later). The same gate is applied in the
+backtest so measured results match live; toggle it off to compare:
+
+```bash
+./scripts/backtest.sh --timeframe 1d --no-mtf     # without the weekly filter
+./scripts/backtest.sh --timeframe 1d              # with it (default)
+```
+
+On strongly-trending names the filter mostly reduces drawdown (few trades removed); on a choppier
+universe it filters more. Configure under `mtf:` in `config.yaml`.
+
 ## Risk & position sizing
 
 Alerts and the backtest use a **fixed-fractional** sizing model configured under `risk:` in

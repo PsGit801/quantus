@@ -35,6 +35,14 @@ class RiskConfig(BaseModel):
     max_position_pct: float = 0.25     # cap any single position at 25% of equity
 
 
+class MTFConfig(BaseModel):
+    """Multi-timeframe confirmation: gate lower-timeframe alerts by a higher-timeframe trend."""
+
+    require: bool = True
+    higher_timeframe: str = "1wk"
+    sma_window: int = 30          # higher-TF uptrend = close > SMA(sma_window)
+
+
 class AppConfig(BaseModel):
     tickers: list[str]
     timeframes: list[str] = Field(default_factory=lambda: ["1d", "1wk"])
@@ -43,6 +51,7 @@ class AppConfig(BaseModel):
     chart_dir: str = "charts"
     detection: DetectionConfig = Field(default_factory=DetectionConfig)
     risk: RiskConfig = Field(default_factory=RiskConfig)
+    mtf: MTFConfig = Field(default_factory=MTFConfig)
 
 
 class Secrets(BaseModel):

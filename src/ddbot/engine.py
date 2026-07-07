@@ -9,6 +9,7 @@ from .alerts.formatter import format_signal
 from .charts.chart import render
 from .config import AppConfig
 from .data.base import DataProvider
+from .mtf import is_uptrend
 from .patterns.base import PatternState
 from .patterns.double_bottom import check_confirmation, detect
 from .state.store import PatternStore
@@ -30,12 +31,14 @@ class Engine:
         self.store = store
         self.alerter = alerter
         self.dry_run = dry_run
+        self._higher_df_cache: dict = {}
 
     def run(self) -> int:
         """Process every ticker on every configured timeframe. Returns alerts fired."""
         # Watchlist lives in the DB (editable from Telegram); config tickers seed it.
         self.store.seed_watchlist(self.cfg.tickers)
         tickers = self.store.list_tickers()
+        self._higher_df_cache = {}
 
         alerts = 0
         for ticker in tickers:
@@ -68,10 +71,28 @@ class Engine:
             if updated.state is PatternState.CONFIRMED and not self.store.is_alerted(
                 updated.pattern_id
             ):
-                self._alert(updated, df)
-                self.store.mark_alerted(updated.pattern_id)
-                alerts += 1
+                if self._mtf_ok(ticker, timeframe, updated.confirm_date):
+                    self._alert(updated, df)
+                    self.store.mark_alerted(updated.pattern_id)
+                    alerts += 1
+                else:
+                    # Higher timeframe disagrees — suppress. State stays CONFIRMED so it
+                    # won't be re-evaluated (not re-alerted) on later runs.
+                    log.info("%s %s: %s suppressed (higher-TF not in uptrend)",
+                             ticker, timeframe, updated.pattern_id)
         return alerts
+
+    def _mtf_ok(self, ticker: str, timeframe: str, confirm_date) -> bool:
+        """Gate lower-timeframe alerts by the higher-timeframe trend (if enabled)."""
+        m = self.cfg.mtf
+        if not m.require or timeframe == m.higher_timeframe:
+            return True
+        if ticker not in self._higher_df_cache:
+            lookback = max(self.cfg.detection.lookback_bars, m.sma_window * 3)
+            self._higher_df_cache[ticker] = self.provider.get_ohlcv(
+                ticker, m.higher_timeframe, lookback
+            )
+        return is_uptrend(self._higher_df_cache[ticker], confirm_date, m.sma_window)
 
     def _alert(self, pattern, df) -> None:
         message = format_signal(pattern, self.cfg.risk)

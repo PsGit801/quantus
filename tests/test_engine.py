@@ -1,9 +1,10 @@
 import os
 
+import pandas as pd
 from _synthetic import TEST_CFG, confirmed_w
 
 from ddbot.alerts.base import Alerter
-from ddbot.config import AppConfig
+from ddbot.config import AppConfig, MTFConfig
 from ddbot.engine import Engine
 from ddbot.state.store import PatternStore
 
@@ -14,6 +15,25 @@ class FakeProvider:
 
     def get_ohlcv(self, ticker, timeframe, lookback_bars):
         return self.df
+
+
+class TFProvider:
+    """Returns different frames per timeframe (to exercise the MTF gate)."""
+
+    def __init__(self, daily, weekly):
+        self.daily = daily
+        self.weekly = weekly
+
+    def get_ohlcv(self, ticker, timeframe, lookback_bars):
+        return self.weekly if timeframe == "1wk" else self.daily
+
+
+def _downtrend_weekly(n=40):
+    # n weekly bars ending well before the daily fixture's confirm date, declining.
+    closes = [100.0 - i for i in range(n)]
+    idx = pd.date_range("2023-01-01", periods=n, freq="7D")
+    return pd.DataFrame({"open": closes, "high": closes, "low": closes,
+                         "close": closes, "volume": [1000] * n}, index=idx)
 
 
 class CountingAlerter(Alerter):
@@ -33,6 +53,7 @@ def _engine(tmp_path, alerter):
         db_path=str(tmp_path / "s.sqlite3"),
         chart_dir=str(tmp_path / "charts"),
         detection=TEST_CFG,
+        mtf=MTFConfig(require=False),  # isolate detection/alert flow from the MTF gate
     )
     store = PatternStore(cfg.db_path)
     provider = FakeProvider(confirmed_w())
@@ -70,4 +91,19 @@ def test_engine_scans_db_watchlist_over_config(tmp_path):
 
     store.close()
 
+
+def test_mtf_suppresses_daily_alert_when_weekly_downtrend(tmp_path):
+    # Daily pattern confirms, but the weekly timeframe is in a downtrend -> no alert.
+    cfg = AppConfig(
+        tickers=["TEST"], timeframes=["1d"],
+        db_path=str(tmp_path / "s.sqlite3"), chart_dir=str(tmp_path / "charts"),
+        detection=TEST_CFG, mtf=MTFConfig(require=True, higher_timeframe="1wk", sma_window=30),
+    )
+    store = PatternStore(cfg.db_path)
+    alerter = CountingAlerter()
+    provider = TFProvider(daily=confirmed_w(), weekly=_downtrend_weekly())
+    engine = Engine(cfg, provider, store, alerter)
+
+    assert engine.run() == 0            # suppressed by the weekly downtrend
+    assert alerter.messages == []
     store.close()

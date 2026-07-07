@@ -8,6 +8,7 @@ import dataclasses
 
 from ..config import load_config
 from ..data.yahoo import YahooDataProvider
+from ..mtf import is_uptrend
 from .engine import BacktestConfig, backtest_ticker
 from .metrics import equity_curve, format_report, summarize
 from .sweep import cast_value, format_sweep, parse_sweep_specs, run_sweep
@@ -38,6 +39,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--top", type=int, default=10, help="how many top sweep combos to show")
     p.add_argument("--equity", type=float, help="starting $ for a fixed-fractional equity curve")
     p.add_argument("--risk-pct", type=float, help="risk fraction per trade (default: config risk)")
+    p.add_argument("--no-mtf", action="store_true", help="disable multi-timeframe confirmation")
     args = p.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -71,11 +73,19 @@ def main(argv: list[str] | None = None) -> int:
         print()
         return 0
 
+    # Multi-timeframe gate: for a lower timeframe, require the higher-TF uptrend (matches live).
+    m = cfg.mtf
+    use_mtf = m.require and not args.no_mtf and args.timeframe != m.higher_timeframe
+
     all_trades = []
     per_ticker = {}
     for ticker in tickers:
         df = provider.get_ohlcv(ticker, args.timeframe, args.history_bars)
-        trades = backtest_ticker(df, ticker, args.timeframe, detection, bt)
+        mtf_filter = None
+        if use_mtf:
+            hdf = provider.get_ohlcv(ticker, m.higher_timeframe, max(args.history_bars, m.sma_window * 5))
+            mtf_filter = lambda d, _h=hdf: is_uptrend(_h, d, m.sma_window)
+        trades = backtest_ticker(df, ticker, args.timeframe, detection, bt, mtf_filter=mtf_filter)
         per_ticker[ticker] = summarize(trades)
         all_trades.extend(trades)
 
@@ -83,7 +93,8 @@ def main(argv: list[str] | None = None) -> int:
     span = ""
     if all_trades:
         span = f"  ({min(t.entry_date for t in all_trades)} → {max(t.exit_date for t in all_trades)})"
-    print(f"\nDouble-bottom backtest — {args.timeframe}, target={args.target}{span}\n")
+    mtf_note = f", MTF={'on' if use_mtf else 'off'}"
+    print(f"\nDouble-bottom backtest — {args.timeframe}, target={args.target}{mtf_note}{span}\n")
     print(format_report(per_ticker, overall))
     print()
 
