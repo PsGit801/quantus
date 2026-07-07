@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd LaunchAgent for the always-on Telegram listener.
+
+  Runs the venv Python interpreter directly (mirrors the working ai.fitness.bot.plist
+  pattern) — launchd cannot reliably exec a shell script from ~/Desktop due to macOS
+  TCC, so we invoke python with -m ddbot.listen instead of scripts/listen.sh.
+
+  Install:
+    cp deploy/ai.ddbot.telegram-listener.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/ai.ddbot.telegram-listener.plist
+
+  Manage:
+    launchctl list | grep ddbot            # confirm running (PID, exit code 0)
+    launchctl unload ~/Library/LaunchAgents/ai.ddbot.telegram-listener.plist   # stop
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.ddbot.telegram-listener</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/wenhua/Desktop/Quantus/.venv/bin/python</string>
+        <string>-m</string>
+        <string>ddbot.listen</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/wenhua/Desktop/Quantus</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/wenhua/Desktop/Quantus/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>PYTHONPATH</key>
+        <string>/Users/wenhua/Desktop/Quantus/src</string>
+    </dict>
+
+    <key>LimitLoadToSessionType</key>
+    <array>
+        <string>Aqua</string>
+        <string>Background</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/wenhua/Desktop/Quantus/listener.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/wenhua/Desktop/Quantus/listener.log</string>
+</dict>
+</plist>

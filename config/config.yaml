@@ -1,0 +1,43 @@
+# Watchlist and detection settings. Secrets live in .env, not here.
+# Start with the Magnificent 7, then expand this list over time.
+tickers:
+  - AAPL
+  - MSFT
+  - GOOGL
+  - AMZN
+  - NVDA
+  - META
+  - TSLA
+
+# Scan each timeframe independently; every timeframe fires its own alert + chart.
+timeframes:
+  - "1d"    # daily
+  - "1wk"   # weekly (stronger, rarer signal)
+
+# yfinance's current-period bar keeps updating until the session/week closes.
+# Keep true to only ever act on fully closed bars (safe, but confirmations land
+# one bar late). Set false if hermes runs comfortably after the US close and
+# you want same-day confirmation.
+drop_forming_bar: true
+
+db_path: "ddbot.sqlite3" # SQLite state file (created on first run)
+chart_dir: "charts"      # where confirmation chart PNGs are written
+
+detection:
+  lookback_bars: 90          # window scanned per ticker
+  swing_k: 3                 # bars each side required to qualify a swing point
+  bottom_tol_pct: 0.03       # max relative gap between the two bottom lows (3%)
+  min_prominence_pct: 0.05   # neckline must sit >=5% above the bottoms (real "W")
+  min_bars_between: 5        # bottoms not too close
+  max_bars_between: 50       # ...nor too far; also the pending-pattern expiry
+  neckline_buffer_pct: 0.001 # breakout must clear neckline by 0.1% (noise guard)
+  require_prior_downtrend: true
+  require_volume_confirmation: true  # breakout candle must show conviction (volume)
+  volume_avg_window: 20              # bars used for the average-volume baseline
+  volume_factor: 1.5                 # breakout volume >= this x average (sweep-validated; holds out-of-sample)
+
+# Position sizing used for the "suggested size" line in alerts and the $ backtest.
+risk:
+  account_equity: 10000.0    # notional account size for sizing suggestions
+  risk_per_trade_pct: 0.01   # risk 1% of equity per trade
+  max_position_pct: 0.25     # cap any single position at 25% of equity

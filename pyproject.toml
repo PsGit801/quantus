@@ -1,0 +1,33 @@
+[project]
+name = "ddbot"
+version = "0.1.0"
+description = "Double-bottom chart-pattern detection & alert bot (Phase 1 MVP)"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "yfinance>=0.2.40",
+    "pydantic>=2.5",
+    "pyyaml>=6.0",
+    "requests>=2.31",
+    "matplotlib>=3.7",
+    "mplfinance>=0.12.10b0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+docs = ["reportlab>=4.0"]  # for docs/generate_pdf.py
+
+[project.scripts]
+ddbot = "ddbot.run:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
