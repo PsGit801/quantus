@@ -180,6 +180,23 @@ express results in dollars via a sequential fixed-fractional equity curve:
 Caveat: the $ curve compounds trades sequentially and ignores slippage, commissions, dividends, and
 concurrent-position capital limits — indicative, not a live P&L guarantee.
 
+## Signal journal (live validation)
+
+See how the bot's *fired* alerts actually played out vs the backtest expectancy — read-only, never
+sends or mutates state:
+
+```bash
+./scripts/journal.sh                     # all fired signals
+./scripts/journal.sh --since 2026-07-02  # only post-go-live signals
+./scripts/journal.sh --csv journal.csv
+```
+
+It reads alerted patterns from `ddbot.sqlite3`, replays each signal's forward price to label it
+**win / loss / timeout / open** (measured-move target vs stop), and prints live win-rate / avg R /
+profit factor next to the backtest reference. Open positions show unrealized R (marked `*`). Use
+`--since` to exclude the seeded historical baseline and focus on genuine forward signals. Small live
+samples aren't conclusive — this is for tracking, not proof.
+
 ## Risks & limitations
 
 - **False positives are inherent** — prominence + similarity + confirmation gates mitigate, not eliminate.

@@ -120,6 +120,13 @@ class PatternStore:
         )
         return [_row_to_pattern(r) for r in cur.fetchall()]
 
+    def alerted_patterns(self) -> list[DoubleBottom]:
+        """All patterns that were actually alerted (fired to the user), oldest first."""
+        cur = self.conn.execute(
+            "SELECT * FROM patterns WHERE alerted = 1 ORDER BY confirm_date, ticker"
+        )
+        return [_row_to_pattern(r) for r in cur.fetchall()]
+
     def is_alerted(self, pattern_id: str) -> bool:
         cur = self.conn.execute(
             "SELECT alerted FROM patterns WHERE pattern_id = ?", (pattern_id,)
