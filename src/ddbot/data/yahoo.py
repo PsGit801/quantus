@@ -73,23 +73,32 @@ class YahooDataProvider(DataProvider):
         # have >= lookback_bars bars (plus room for the prior-downtrend lookback).
         period_days = int(lookback_bars * _DAYS_PER_BAR[timeframe] * 1.3) + 40
 
+        import time
+
         import yfinance as yf  # imported lazily so pattern tests don't need the dep
 
-        try:
-            raw = yf.download(
-                ticker,
-                period=f"{period_days}d",
-                interval=interval,
-                auto_adjust=True,  # split/dividend-adjusted
-                progress=False,
-                threads=False,
-            )
-        except Exception as exc:  # network / symbol / library errors — never crash the run
-            log.warning("fetch failed for %s: %s", ticker, exc)
-            return pd.DataFrame(columns=OHLCV_COLUMNS)
+        # Retry with backoff — a transient network/DNS blip shouldn't skip the ticker.
+        raw = None
+        attempts = 3
+        for attempt in range(attempts):
+            try:
+                raw = yf.download(
+                    ticker,
+                    period=f"{period_days}d",
+                    interval=interval,
+                    auto_adjust=True,  # split/dividend-adjusted
+                    progress=False,
+                    threads=False,
+                )
+                if raw is not None and not raw.empty:
+                    break
+            except Exception as exc:  # network / symbol / library errors — never crash the run
+                log.warning("fetch failed for %s (attempt %d/%d): %s", ticker, attempt + 1, attempts, exc)
+            if attempt < attempts - 1:
+                time.sleep(2 * (attempt + 1))  # 2s, then 4s
 
         if raw is None or raw.empty:
-            log.warning("no data returned for %s", ticker)
+            log.warning("no data returned for %s after %d attempts", ticker, attempts)
             return pd.DataFrame(columns=OHLCV_COLUMNS)
 
         df = _normalize(raw)

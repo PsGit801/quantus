@@ -49,28 +49,48 @@ def _dates(df: pd.DataFrame) -> list[date]:
 
 
 def evaluate(df: pd.DataFrame, p: DoubleBottom, bt: BacktestConfig) -> Outcome:
-    """Label a fired signal by replaying forward prices from its confirmation bar."""
-    entry = p.confirm_close
-    stop = p.stop_reference
-    risk = entry - stop
-    target = p.neckline + (p.neckline - stop)  # measured move
+    """Label a fired signal by replaying forward prices from its confirmation bar.
 
-    def out(status, price, bars, unreal):
-        r = (price - entry) / risk if risk > 0 else 0.0
-        return Outcome(p.ticker, p.timeframe, p.confirm_date, round(entry, 2), round(stop, 2),
-                       round(target, 2), status, round(r, 3), round(price, 2), bars, unreal)
+    Stored levels (entry/stop/neckline) were split/dividend-adjusted as of *detection*;
+    the re-fetched series is re-adjusted to *today*, so they can be on a different scale.
+    We rescale stored levels to the re-fetched series via the close ratio at the
+    confirmation bar, keeping the comparison valid across splits and dividend drift.
+    """
+    stored_entry = p.confirm_close or 0.0
 
-    if df.empty or risk <= 0:
-        return out("unknown", entry, 0, False)
+    def unknown() -> Outcome:
+        return Outcome(p.ticker, p.timeframe, p.confirm_date, round(stored_entry, 2),
+                       round(p.stop_reference, 2), 0.0, "unknown", 0.0, round(stored_entry, 2), 0, False)
+
+    if df.empty or stored_entry <= 0:
+        return unknown()
     dts = _dates(df)
     if p.confirm_date not in dts:
-        return out("unknown", entry, 0, False)  # data window doesn't reach this signal
+        return unknown()  # data window doesn't reach this signal
 
     j = dts.index(p.confirm_date)
     highs = df["high"].to_numpy(dtype=float)
     lows = df["low"].to_numpy(dtype=float)
     closes = df["close"].to_numpy(dtype=float)
     end = len(df) - 1
+
+    ref_close = float(closes[j])
+    ratio = ref_close / stored_entry if ref_close > 0 else 1.0
+    if not (ratio > 0):
+        ratio = 1.0
+    entry = ref_close                       # true adjusted entry on the current series
+    stop = p.stop_reference * ratio
+    neckline = p.neckline * ratio
+    target = neckline + (neckline - stop)   # measured move
+    risk = entry - stop
+
+    def out(status, price, bars, unreal):
+        r = (price - entry) / risk if risk > 0 else 0.0
+        return Outcome(p.ticker, p.timeframe, p.confirm_date, round(entry, 2), round(stop, 2),
+                       round(target, 2), status, round(r, 3), round(price, 2), bars, unreal)
+
+    if risk <= 0:
+        return out("unknown", entry, 0, False)
 
     for i in range(j + 1, min(end, j + bt.max_hold_bars) + 1):
         if lows[i] <= stop:  # stop-first if both hit (conservative)

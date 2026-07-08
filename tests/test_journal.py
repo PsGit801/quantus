@@ -43,6 +43,18 @@ def test_evaluate_open_when_unresolved_recent():
     assert o.status == "open" and o.unrealized is True
 
 
+def test_evaluate_split_rescales_stored_levels():
+    # Signal stored at old scale (entry 110, stop 100, neckline 110 -> target 120).
+    # A 2:1 split later halves the re-fetched series: confirm close now 55, target ~60.
+    # Rescaled target = 60; bar 3 high 61 -> win with the same ~1R.
+    df = _fwd([56, 56, 56, 61, 61], [54, 54, 54, 56, 56], [55, 55, 55, 59, 59])
+    p = _sig(df, neckline=110.0, base=100.0, entry=110.0)  # stored on OLD (pre-split) scale
+    o = evaluate(df, p, BacktestConfig(max_hold_bars=60))
+    assert o.status == "win"
+    assert abs(o.r_multiple - 1.0) < 0.01     # ratio-corrected, still ~+1R
+    assert abs(o.entry - 55.0) < 0.01          # entry uses the re-fetched (adjusted) close
+
+
 def test_evaluate_unknown_when_confirm_date_missing():
     df = _fwd([111, 111, 111], [109, 109, 109], [110, 110, 110])
     p = _sig(df)
