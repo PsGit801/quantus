@@ -4,7 +4,7 @@ Pattern (enter BELOW the neckline, on a failed breakdown):
 
     B1 (first bottom)  ->  recovery to interim peak (neckline)  ->  steep, high-volume
     flush that UNDERCUTS B1's low (B2)  ->  a bullish candle reclaims back above B1's low
-    within `reclaim_window` bars  =  ENTRY.
+    (but still BELOW the neckline) within `reclaim_window` bars  =  ENTRY.
 
 Stop = the B2 flush low (`DoubleBottom.stop_reference`, which is min(b1_low, b2_low) = b2_low
 after the undercut). Target = the neckline.
@@ -172,7 +172,8 @@ def detect(
 def check_confirmation(
     pattern: DoubleBottom, df: pd.DataFrame, cfg: DetectionConfig
 ) -> DoubleBottom:
-    """Confirm on the reclaim above B1's low; invalidate on a deeper flush or an elapsed window."""
+    """Confirm on a below-neckline reclaim above B1's low; invalidate on a deeper flush, a
+    reclaim that overshoots the neckline (a straight breakout), or an elapsed window."""
     if df.empty:
         return pattern
 
@@ -185,12 +186,17 @@ def check_confirmation(
     closes = df["close"].to_numpy(dtype=float)
     b1_low = pattern.b1_low
     flush_low = pattern.stop_reference  # = b2 flush low
+    neckline = pattern.neckline
     reclaim_end = min(len(df) - 1, j + cfg.reclaim_window)
 
     for i in range(j + 1, reclaim_end + 1):
         if closes[i] < flush_low:
             return pattern.with_state(PatternState.INVALIDATED)  # deeper flush -> reclaim failed
         if closes[i] > opens[i] and closes[i] > b1_low:
+            # A reclaim that overshoots the neckline is a straight breakout, not the
+            # below-neckline bear-trap entry we want (target=neckline would be behind entry).
+            if closes[i] >= neckline:
+                return pattern.with_state(PatternState.INVALIDATED)
             return pattern.with_state(
                 PatternState.CONFIRMED,
                 confirm_date=dates[i],

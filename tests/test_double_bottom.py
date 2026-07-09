@@ -49,6 +49,17 @@ def test_confirms_on_reclaim():
     assert res.confirm_close == 103.0             # entry (below neckline 114)
 
 
+def test_invalidated_when_reclaim_overshoots_neckline():
+    # A bullish candle that reclaims straight through the neckline is a breakout, not a
+    # below-neckline bear-trap entry -> invalidate (target would sit behind the entry).
+    closes = list(_CLOSE)
+    opens = list(_OPEN)
+    closes[16], opens[16] = 116.0, 90.0  # bullish, but closes above the neckline (114)
+    df = make_ohlcv(_LOW, _HIGH, closes, opens, _VOL)
+    p = detect(df, "T", "1d", TEST_CFG)[0]
+    assert check_confirmation(p, df, TEST_CFG).state is PatternState.INVALIDATED
+
+
 def test_invalidated_on_deeper_flush_before_reclaim():
     closes = list(_CLOSE)
     closes[16] = 85.0  # closes below the flush low (88) -> failed
