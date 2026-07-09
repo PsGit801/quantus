@@ -80,8 +80,7 @@ def evaluate(df: pd.DataFrame, p: DoubleBottom, bt: BacktestConfig) -> Outcome:
         ratio = 1.0
     entry = ref_close                       # true adjusted entry on the current series
     stop = p.stop_reference * ratio
-    neckline = p.neckline * ratio
-    target = neckline + (neckline - stop)   # measured move
+    target = p.neckline * ratio             # target = neckline (matches the live strategy)
     risk = entry - stop
 
     def out(status, price, bars, unreal):

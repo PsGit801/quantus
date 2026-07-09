@@ -1,4 +1,4 @@
-"""Synthetic OHLCV builders for deterministic pattern tests."""
+"""Synthetic OHLCV builders for deterministic flush-reclaim pattern tests."""
 
 from __future__ import annotations
 
@@ -7,34 +7,51 @@ import pandas as pd
 
 from ddbot.config import DetectionConfig
 
-# Detection config tuned to the compact 18-bar fixtures below.
-TEST_CFG = DetectionConfig(swing_k=2, min_bars_between=3)
+# Config tuned to the compact 20-bar flush-reclaim fixture below.
+TEST_CFG = DetectionConfig(
+    swing_k=2,
+    lookback_bars=18,
+    min_prominence_pct=0.05,
+    max_bars_between=50,
+    require_prior_downtrend=True,
+    require_undercut=True,
+    flush_atr_window=5,
+    flush_atr_mult=2.0,
+    flush_max_bars=3,
+    flush_volume_factor=1.5,
+    flush_volume_window=5,
+    reclaim_window=4,
+)
 
-# A clean "W": decline into B1 (idx 5, low 100), rally to a peak (idx 10, high 111),
-# pull back to B2 (idx 15, low 100.5), then breakout bars.
-W_LOWS = [110, 108, 106, 104, 102, 100, 102, 104, 106, 108,
-          110, 108, 106, 104, 102, 100.5, 103, 101]
+# A flush-reclaim: decline into B1 (idx5, low 100), recover to a peak (idx12, high 114),
+# a steep high-volume flush that undercuts B1 -> B2 (idx15, low 88), then a bullish reclaim
+# candle (idx17, close 103 > B1 low 100). Entry = 103; neckline (target) = 114; stop = 88.
+_OPEN = [114, 111, 108, 105, 102, 101, 103, 105, 107, 106, 108, 110, 111, 100, 92, 89, 95, 95, 101, 103]
+_HIGH = [115, 112, 109, 106, 103, 102, 105, 107, 109, 108, 111, 112, 114, 106, 99, 91, 96, 104, 103, 105]
+_LOW = [113, 110, 107, 104, 101, 100, 102, 104, 106, 105, 107, 109, 110, 104, 96, 88, 92, 95, 100, 102]
+_CLOSE = [114, 111, 108, 105, 102, 101, 103, 105, 107, 106, 108, 110, 111, 100, 92, 89, 93, 103, 101, 103]
+_VOL = [1000] * 20
+_VOL[15] = 5000  # capitulation volume on the flush
 
 
-def make_ohlcv(lows, highs=None, closes=None, opens=None) -> pd.DataFrame:
+def make_ohlcv(lows, highs=None, closes=None, opens=None, volumes=None) -> pd.DataFrame:
     lows = np.asarray(lows, dtype=float)
     n = len(lows)
     highs = np.asarray(highs, dtype=float) if highs is not None else lows + 1.0
-    # Default: close == open == low, i.e. no bar is "green" unless overridden. This
-    # keeps confirmation from firing accidentally in structure-only fixtures.
     closes = np.asarray(closes, dtype=float) if closes is not None else lows.copy()
     opens = np.asarray(opens, dtype=float) if opens is not None else lows.copy()
+    vol = np.asarray(volumes, dtype=float) if volumes is not None else np.full(n, 1000.0)
     idx = pd.date_range("2024-01-01", periods=n, freq="D")
     return pd.DataFrame(
-        {"open": opens, "high": highs, "low": lows, "close": closes, "volume": 1_000.0},
+        {"open": opens, "high": highs, "low": lows, "close": closes, "volume": vol},
         index=idx,
     )
 
 
-def confirmed_w() -> pd.DataFrame:
-    """W with a bullish breakout candle at idx 17 (close 113 > neckline 111, green)."""
-    df = make_ohlcv(W_LOWS)
-    df.iloc[17, df.columns.get_loc("open")] = 109.0
-    df.iloc[17, df.columns.get_loc("close")] = 113.0
-    df.iloc[17, df.columns.get_loc("high")] = 113.5
-    return df
+def flush_reclaim() -> pd.DataFrame:
+    """The canonical flush-reclaim fixture (see indices above)."""
+    return make_ohlcv(_LOW, _HIGH, _CLOSE, _OPEN, _VOL)
+
+
+# Backwards-compatible alias for tests that import the old fixture name.
+confirmed_w = flush_reclaim

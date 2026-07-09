@@ -23,18 +23,22 @@ drop_forming_bar: true
 db_path: "ddbot.sqlite3" # SQLite state file (created on first run)
 chart_dir: "charts"      # where confirmation chart PNGs are written
 
+# Flush-reclaim (bear-trap) double bottom: B1 -> recovery peak (neckline) -> steep,
+# high-volume flush that UNDERCUTS B1's low (B2) -> bullish reclaim above B1's low within
+# reclaim_window bars = entry (below the neckline). Stop = flush low; target = neckline.
 detection:
   lookback_bars: 90          # window scanned per ticker
-  swing_k: 3                 # bars each side required to qualify a swing point
-  bottom_tol_pct: 0.03       # max relative gap between the two bottom lows (3%)
-  min_prominence_pct: 0.05   # neckline must sit >=5% above the bottoms (real "W")
-  min_bars_between: 5        # bottoms not too close
-  max_bars_between: 50       # ...nor too far; also the pending-pattern expiry
-  neckline_buffer_pct: 0.001 # breakout must clear neckline by 0.1% (noise guard)
+  swing_k: 3                 # bars each side required to qualify B1 as a swing low
+  min_prominence_pct: 0.05   # recovery: interim peak >= 5% above B1's low
+  max_bars_between: 50       # max bars from B1 to the flush low
   require_prior_downtrend: true
-  require_volume_confirmation: true  # breakout candle must show conviction (volume)
-  volume_avg_window: 20              # bars used for the average-volume baseline
-  volume_factor: 1.5                 # breakout volume >= this x average (sweep-validated; holds out-of-sample)
+  require_undercut: true     # B2 low must breach BELOW B1's low (bear-trap)
+  flush_atr_window: 14       # ATR window for the steepness measure
+  flush_atr_mult: 3.0        # peak->B2 drop must be >= this x ATR (near-vertical flush)
+  flush_max_bars: 3          # peak->B2 must happen within this many bars
+  flush_volume_factor: 1.5   # flush bar volume >= this x its recent average (capitulation)
+  flush_volume_window: 20
+  reclaim_window: 4          # bullish close > B1 low within this many bars of B2 = entry
 
 # Multi-timeframe confirmation: only fire a daily alert when the weekly trend agrees
 # (weekly close above its SMA). Weekly alerts are not gated (they are the higher timeframe).

@@ -24,11 +24,11 @@ def test_parse_sweep_specs_rejects_bad():
 
 def test_cast_value_types_from_field():
     base = DetectionConfig()
-    assert cast_value(base, "volume_factor", "1.5") == 1.5        # float field
-    assert isinstance(cast_value(base, "volume_factor", "1.5"), float)
-    assert cast_value(base, "volume_avg_window", "30") == 30       # int field
-    assert isinstance(cast_value(base, "volume_avg_window", "30"), int)
-    assert cast_value(base, "require_volume_confirmation", "false") is False
+    assert cast_value(base, "flush_atr_mult", "2.5") == 2.5        # float field
+    assert isinstance(cast_value(base, "flush_atr_mult", "2.5"), float)
+    assert cast_value(base, "flush_volume_window", "30") == 30     # int field
+    assert isinstance(cast_value(base, "flush_volume_window", "30"), int)
+    assert cast_value(base, "require_undercut", "false") is False
 
 
 def test_cast_value_rejects_unknown_param():

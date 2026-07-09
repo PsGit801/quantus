@@ -67,7 +67,7 @@ def test_confirmation_fires_one_alert_and_is_idempotent(tmp_path):
     # First run: detect -> confirm -> render chart -> alert.
     assert engine.run() == 1
     assert len(alerter.messages) == 1
-    assert "Double Bottom confirmed" in alerter.messages[0]
+    assert "Double Bottom" in alerter.messages[0]
     assert "TEST" in alerter.messages[0]
     # A chart image was rendered and passed to the alerter.
     assert alerter.images[0] and os.path.getsize(alerter.images[0]) > 0

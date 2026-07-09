@@ -1,7 +1,7 @@
 from datetime import date
 
 import pandas as pd
-from _synthetic import TEST_CFG, W_LOWS, make_ohlcv
+from _synthetic import TEST_CFG, flush_reclaim
 
 from ddbot.backtest.engine import (
     BacktestConfig,
@@ -21,7 +21,8 @@ def _forward_df(highs, lows, closes):
     )
 
 
-def _pattern(df, neckline=110.0, base=100.0, entry=110.0, confirm_i=2):
+def _pattern(df, neckline=110.0, base=100.0, entry=105.0, confirm_i=2):
+    # Reclaim entry sits below the neckline; target = neckline (default BacktestConfig).
     return DoubleBottom(
         ticker="T", timeframe="1d",
         b1_date=date(2024, 1, 1), b1_low=base,
@@ -32,27 +33,27 @@ def _pattern(df, neckline=110.0, base=100.0, entry=110.0, confirm_i=2):
     )
 
 
-# --- trade simulation -----------------------------------------------------------
+# --- trade simulation (target = neckline) ---------------------------------------
 
-def test_simulate_win_at_measured_move_target():
-    # entry 110, stop 100, target = 110 + (110-100) = 120 -> R = 1.0
+def test_simulate_win_at_neckline_target():
+    # entry 105, stop 100, target = neckline 110 -> R = (110-105)/5 = 1.0
     df = _forward_df(
-        highs=[111, 111, 111, 121, 121, 121],
-        lows=[109, 109, 109, 111, 111, 111],
-        closes=[110, 110, 110, 115, 115, 115],
+        highs=[106, 106, 106, 111, 111, 111],
+        lows=[104, 104, 104, 106, 106, 106],
+        closes=[105, 105, 105, 108, 108, 108],
     )
     tr = simulate_trade(df, _pattern(df), BacktestConfig(max_hold_bars=60))
     assert tr.outcome == "win"
     assert tr.r_multiple == 1.0
     assert tr.bars_held == 1
-    assert tr.exit == 120.0
+    assert tr.exit == 110.0
 
 
 def test_simulate_loss_at_stop():
     df = _forward_df(
-        highs=[111, 111, 111, 111, 111, 111],
-        lows=[109, 109, 109, 99, 99, 99],   # bar 3 pierces the stop (100)
-        closes=[110, 110, 110, 105, 105, 105],
+        highs=[106, 106, 106, 106, 106, 106],
+        lows=[104, 104, 104, 99, 99, 99],   # bar 3 pierces the stop (100)
+        closes=[105, 105, 105, 101, 101, 101],
     )
     tr = simulate_trade(df, _pattern(df), BacktestConfig(max_hold_bars=60))
     assert tr.outcome == "loss"
@@ -61,11 +62,10 @@ def test_simulate_loss_at_stop():
 
 
 def test_simulate_timeout_exit_at_close():
-    # Never hits stop or target within max_hold; time-exit at close.
     df = _forward_df(
-        highs=[111, 111, 111, 112, 112, 112],
-        lows=[109, 109, 109, 105, 105, 105],
-        closes=[110, 110, 110, 111, 112, 113],
+        highs=[106, 106, 106, 108, 108, 108],
+        lows=[104, 104, 104, 103, 103, 103],
+        closes=[105, 105, 105, 106, 107, 108],
     )
     tr = simulate_trade(df, _pattern(df), BacktestConfig(max_hold_bars=2))
     assert tr.outcome == "timeout"
@@ -73,29 +73,19 @@ def test_simulate_timeout_exit_at_close():
 
 
 def test_simulate_skips_degenerate_risk():
-    df = _forward_df([111] * 4, [109] * 4, [110] * 4)
-    # target <= entry when entry already at/above measured move
-    p = _pattern(df, neckline=110.0, base=100.0, entry=125.0)  # target 120 < entry 125
+    df = _forward_df([111] * 4, [104] * 4, [105] * 4)
+    p = _pattern(df, neckline=110.0, base=100.0, entry=112.0)  # entry above neckline target
     assert simulate_trade(df, p, BacktestConfig()) is None
 
 
-# --- walk-forward signal discovery ---------------------------------------------
+# --- walk-forward signal discovery (no look-ahead) ------------------------------
 
-def test_find_signals_no_lookahead():
-    # 23-bar series: 5 leading bars + the clean W; lookback window fits the whole W.
-    lows = [116, 114, 112, 110, 108] + list(W_LOWS)
-    df = make_ohlcv(lows)
-    b = df.columns
-    df.iloc[22, b.get_loc("open")] = 109.0   # breakout candle (W's idx17 -> combined idx22)
-    df.iloc[22, b.get_loc("close")] = 113.0
-    df.iloc[22, b.get_loc("high")] = 113.5
-    cfg = TEST_CFG.model_copy(update={"lookback_bars": 20})
-
-    sigs = find_signals(df, "T", "1d", cfg)
+def test_find_signals_confirms_on_reclaim():
+    sigs = find_signals(flush_reclaim(), "T", "1d", TEST_CFG)
     assert len(sigs) == 1
     s = sigs[0]
     assert s.state is PatternState.CONFIRMED
-    assert s.confirm_date == df.index[22].date()  # entry is the breakout bar, not earlier
+    assert s.confirm_date == date(2024, 1, 18)  # the reclaim bar
 
 
 # --- metrics --------------------------------------------------------------------
@@ -115,11 +105,10 @@ def test_summarize_math():
     assert s.win_rate == 50.0
     assert s.avg_r == 0.25
     assert s.total_r == 1.0
-    assert s.profit_factor == 1.5  # gross win 3 / gross loss 2
+    assert s.profit_factor == 1.5
 
 
 def test_max_drawdown_r():
-    # cumulative R: 2, 1, 0, 1 -> peak 2, worst trough at 0 -> drawdown 2
     assert _max_drawdown_r([2.0, -1.0, -1.0, 1.0]) == 2.0
 
 

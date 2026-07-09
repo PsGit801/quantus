@@ -21,10 +21,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--timeframe", default="1d")
     p.add_argument("--history-bars", type=int, default=1000, help="bars of history to fetch")
     p.add_argument("--max-hold", type=int, default=60, help="max bars to hold a trade")
-    p.add_argument("--target", choices=["measured_move", "r_multiple"], default="measured_move")
+    p.add_argument("--target", choices=["neckline", "measured_move", "r_multiple"], default="neckline")
     p.add_argument("--r-target", type=float, default=2.0, help="reward:risk when --target r_multiple")
-    p.add_argument("--volume-factor", type=float, help="override detection volume_factor")
-    p.add_argument("--no-volume", action="store_true", help="disable volume confirmation")
     p.add_argument("--csv", help="write individual trades to this CSV path")
     p.add_argument(
         "--sweep", action="append", default=[],
@@ -44,15 +42,7 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = load_config(args.config)
     tickers = args.tickers or cfg.tickers
-
     detection = cfg.detection
-    overrides = {}
-    if args.no_volume:
-        overrides["require_volume_confirmation"] = False
-    if args.volume_factor is not None:
-        overrides["volume_factor"] = args.volume_factor
-    if overrides:
-        detection = detection.model_copy(update=overrides)
 
     bt = BacktestConfig(target=args.target, r_target=args.r_target, max_hold_bars=args.max_hold)
     provider = YahooDataProvider(drop_forming_bar=cfg.drop_forming_bar)

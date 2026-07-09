@@ -10,21 +10,29 @@ from pydantic import BaseModel, Field
 
 
 class DetectionConfig(BaseModel):
-    """Tunable double-bottom detection thresholds."""
+    """Tunable double-bottom (flush-reclaim / bear-trap) detection thresholds.
+
+    Pattern: B1 (first bottom) -> recovery to interim peak (neckline) -> steep, high-volume
+    flush that UNDERCUTS B1's low (B2) -> bullish candle reclaims above B1's low within
+    reclaim_window bars = entry (below the neckline). Stop = B2 flush low; target = neckline.
+    """
 
     lookback_bars: int = 90
     swing_k: int = 3
-    bottom_tol_pct: float = 0.03
-    min_prominence_pct: float = 0.05
-    min_bars_between: int = 5
-    max_bars_between: int = 50
-    neckline_buffer_pct: float = 0.001
+    min_prominence_pct: float = 0.05   # recovery: interim peak >= (1+this) x B1 low
+    max_bars_between: int = 50         # max bars from B1 to the flush low
     require_prior_downtrend: bool = True
-    # Volume confirmation: breakout candle volume must be >= volume_factor x the average
-    # of the prior volume_avg_window bars. Filters weak, low-conviction breakouts.
-    require_volume_confirmation: bool = True
-    volume_avg_window: int = 20
-    volume_factor: float = 1.0
+
+    # Steep flush into B2 (the capitulation leg)
+    require_undercut: bool = True      # B2 low must be < B1 low (bear-trap)
+    flush_atr_window: int = 14         # ATR window for the steepness measure
+    flush_atr_mult: float = 3.0        # peak->B2 drop must be >= this x ATR
+    flush_max_bars: int = 3            # peak->B2 must happen within this many bars
+    flush_volume_factor: float = 1.5   # flush bar volume >= this x its average
+    flush_volume_window: int = 20
+
+    # Reclaim (entry trigger)
+    reclaim_window: int = 4            # bullish close > B1 low within N bars of B2
 
 
 class RiskConfig(BaseModel):

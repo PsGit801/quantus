@@ -20,7 +20,7 @@ from ..patterns.double_bottom import check_confirmation, detect
 
 @dataclass(frozen=True)
 class BacktestConfig:
-    target: str = "measured_move"  # or "r_multiple"
+    target: str = "neckline"       # "neckline" | "measured_move" | "r_multiple"
     r_target: float = 2.0          # used when target == "r_multiple"
     max_hold_bars: int = 60
 
@@ -82,8 +82,10 @@ def find_signals(
 def _target_price(p: DoubleBottom, entry: float, stop: float, bt: BacktestConfig) -> float:
     if bt.target == "r_multiple":
         return entry + bt.r_target * (entry - stop)
-    # measured move: project the pattern height above the neckline
-    return p.neckline + (p.neckline - stop)
+    if bt.target == "measured_move":
+        return p.neckline + (p.neckline - stop)
+    # neckline (default): first resistance for a below-neckline reclaim entry
+    return p.neckline
 
 
 def simulate_trade(
