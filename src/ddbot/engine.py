@@ -64,7 +64,10 @@ class Engine:
         alerts = 0
         for pattern in self.store.pending_patterns(ticker, timeframe):
             updated = check_confirmation(pattern, df, self.cfg.detection)
-            if updated.state is not pattern.state:
+            # In a dry-run, don't persist the transition either: advancing to CONFIRMED here
+            # would strand the pattern (pending_patterns skips it), so the real scan could
+            # never confirm/alert it. The in-memory `updated` still drives the preview below.
+            if updated.state is not pattern.state and not self.dry_run:
                 self.store.update_state(updated)
                 log.info("%s %s: %s -> %s", ticker, timeframe, pattern.pattern_id, updated.state.value)
 
@@ -73,7 +76,10 @@ class Engine:
             ):
                 if self._mtf_ok(ticker, timeframe, updated.confirm_date):
                     self._alert(updated, df)
-                    self.store.mark_alerted(updated.pattern_id)
+                    # A dry-run is a read-only preview: never consume the signal, or the
+                    # real scheduled scan would skip an alert the user never actually received.
+                    if not self.dry_run:
+                        self.store.mark_alerted(updated.pattern_id)
                     alerts += 1
                 else:
                     # Higher timeframe disagrees — suppress. State stays CONFIRMED so it

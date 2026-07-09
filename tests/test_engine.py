@@ -79,6 +79,31 @@ def test_confirmation_fires_one_alert_and_is_idempotent(tmp_path):
     store.close()
 
 
+def test_dry_run_previews_without_consuming_the_signal(tmp_path):
+    # A dry-run must be read-only w.r.t. alert state: it previews the alert but never marks
+    # it (or advances state) in the DB, so the real scheduled scan still delivers it.
+    cfg = AppConfig(
+        tickers=["TEST"], timeframes=["1d"],
+        db_path=str(tmp_path / "s.sqlite3"), chart_dir=str(tmp_path / "charts"),
+        detection=TEST_CFG, mtf=MTFConfig(require=False),
+    )
+    store = PatternStore(cfg.db_path)
+    provider = FakeProvider(confirmed_w())
+
+    dry = Engine(cfg, provider, store, alerter=None, dry_run=True)
+    assert dry.run() == 1   # preview fires
+    assert dry.run() == 1   # ...and again — not consumed by the earlier dry-run
+
+    # A real run now delivers it exactly once.
+    alerter = CountingAlerter()
+    real = Engine(cfg, provider, store, alerter)
+    assert real.run() == 1
+    assert len(alerter.messages) == 1
+    assert real.run() == 0  # now genuinely consumed
+
+    store.close()
+
+
 def test_engine_scans_db_watchlist_over_config(tmp_path):
     # When the DB watchlist is non-empty, config tickers are NOT used (seed is skipped).
     alerter = CountingAlerter()
