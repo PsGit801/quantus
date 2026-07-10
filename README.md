@@ -1,11 +1,19 @@
-# ddbot — Double-Bottom Detection & Alert Bot (Phase 1 MVP)
+# ddbot — Double-Bottom (Flush-Reclaim) Detection & Alert Bot
 
-Pulls OHLCV for a watchlist (the **Magnificent 7** by default) on **daily and weekly**
-timeframes, detects **double-bottom** chart patterns, waits for a bullish confirmation candle that
-closes above the neckline, and alerts to **Telegram + Discord** with an **annotated candlestick
-chart** showing the two bottoms, the neckline, and the green breakout candle.
+Pulls OHLCV for a watchlist on **daily and weekly** timeframes, detects a **double-bottom
+flush-reclaim** (bear-trap) setup, and alerts to **Telegram + Discord** with an **annotated
+candlestick chart** showing the two bottoms, the neckline, and the reclaim (entry) bar.
+
+Unlike a classic breakout entry, the entry here is **below the neckline**: a steep capitulation
+flush undercuts the first bottom (a bear trap), then a clean bullish candle reclaims back above it —
+you buy the reversal cheaply, with the stop just under the flush low and the neckline as the target.
 
 Each timeframe is scanned independently and fires its own alert (weekly is a stronger, rarer signal).
+
+> **Discretionary tool, not a mechanical edge.** Backtesting (see below) shows the setup is strongly
+> positive in-sample but **breaks even out-of-sample** at every threshold — no robust *mechanical*
+> edge was found. The bot is used to *find* clean flush-reclaims for a human to judge on the chart,
+> not to trade automatically. Every alert says so.
 
 ## How it works
 
@@ -19,18 +27,30 @@ confirmation that arrives days later is caught, and a confirmed setup is never a
 
 ### Detection logic (`src/ddbot/patterns/double_bottom.py`)
 
-1. **Swing lows** — a bar is a swing low if its low is the min over ±`swing_k` bars.
-2. **Candidate pairs** (B1 before B2) — spacing within `[min_bars_between, max_bars_between]`, and
-   the two lows within `bottom_tol_pct` of each other.
-3. **Neckline** — the highest high strictly between the bottoms; the "W" must have depth
-   (`min_prominence_pct` above the bottoms). This is the main false-positive filter.
-4. **Prior downtrend** (optional) — price must have declined into B1.
-5. **Confirmation** — first closed candle after B2 that closes above `neckline × (1 + buffer)`, is
-   green (`close > open`), **and** carries volume ≥ `volume_factor` × the prior `volume_avg_window`-bar
-   average (weak-volume breakouts are skipped until a stronger one appears).
-6. **Invalidation** — close below the lower bottom, or expiry after `max_bars_between` bars.
-7. **Dedup** — candidates whose necklines sit within ~2% are collapsed to the strongest, so one
-   breakout = one alert.
+The structure (`detect`), then the entry trigger (`check_confirmation`) — both on **closed bars only**:
+
+1. **First bottom (B1)** — a swing low (low is the min over ±`swing_k` bars), with a **prior
+   downtrend** into it (a reversal needs something to reverse).
+2. **Recovery to the neckline** — price rebounds to an interim peak at least `min_prominence_pct`
+   above B1. That peak is the **neckline** (the target).
+3. **Steep flush (B2)** — a sharp capitulation leg that **undercuts B1's low** (`require_undercut`)
+   within `flush_max_bars` bars, where the drop is at least `flush_atr_mult × ATR(flush_atr_window)`
+   (steepness) **and** the flush bar's volume is ≥ `flush_volume_factor` × its `flush_volume_window`
+   average (capitulation). This bear trap is the whole point.
+4. **Reclaim = entry** — within `reclaim_window` bars after the flush, the first bar that reclaims
+   back **above B1's low but still below the neckline**, *and* is a **clean bullish candle**
+   (see below). Entry = that close; stop = flush low; target = neckline.
+5. **Invalidation** — a close back **below the flush low** (the trap deepened), a reclaim that
+   **overshoots the neckline** (that's a straight breakout, not a below-neckline entry), or the
+   reclaim window elapsing with no clean bar.
+6. **Dedup** — candidates whose necklines sit within ~2% are collapsed to the strongest, so one
+   setup = one alert.
+
+**Clean reclaim bar (step 4).** The entry candle must be one of two clean bullish shapes — both with
+a **small upper wick** (no "long head"): a **full green body** (`body ≥ reclaim_min_body_frac` of the
+bar's range) *or* a **bullish pin bar / hammer** (`lower_wick ≥ reclaim_min_lower_wick_frac`), with
+`upper_wick ≤ reclaim_max_upper_wick_frac` in both cases. A green body is required. This rejects
+indecisive or long-wicked bars so entries fire only on a decisive reclaim.
 
 All thresholds live in `config/config.yaml`.
 
@@ -57,9 +77,10 @@ hermes should invoke `python -m ddbot.run` once daily, after the US close.
 pytest
 ```
 
-Covers swing detection, clean-W detection, near-misses (dissimilar bottoms, low prominence),
-confirmation (bullish breakout), non-confirmation (red breakout candle), invalidation, and the
-end-to-end idempotency guarantee.
+Covers swing detection, the steep-undercut flush structure, near-misses (no undercut, not steep
+enough, no volume spike), reclaim confirmation and the clean-bar rule (full green / hammer accept;
+long-upper-wick and weak bars reject), the invalidation paths (deeper flush, neckline overshoot,
+elapsed window), and the end-to-end idempotency guarantee.
 
 ## Alerts
 
@@ -111,20 +132,27 @@ listener; don't run both.)
 ## Backtesting
 
 Measure the strategy's edge by replaying history through the **exact live detector** (walk-forward, no
-look-ahead — a trade is entered the first bar a pattern confirms, then simulated with a stop below the
-bottoms and a measured-move target):
+look-ahead — a trade is entered the first bar a setup reclaims, then simulated with a stop below the
+flush low and the **neckline as the target** by default):
 
 ```bash
 ./scripts/backtest.sh --timeframe 1d --history-bars 1000
 ./scripts/backtest.sh --timeframe 1wk --history-bars 600 --csv trades.csv
+./scripts/backtest.sh --timeframe 1d --target measured_move        # neckline + (neckline - stop)
 ./scripts/backtest.sh --timeframe 1d --target r_multiple --r-target 2   # fixed 2:1 exits
-./scripts/backtest.sh --no-volume        # test sensitivity to the volume gate
 ```
 
 Reports per-ticker + overall: trades, win %, avg R (expectancy), total R, profit factor, max drawdown
 (R), avg bars held. Uses the same `detection` thresholds as live, so tuning `config.yaml` and
 re-running shows the impact. **Caveats:** ignores slippage/commissions/dividends, one position per
 signal, no position sizing — results are indicative, not guarantees.
+
+**What the backtest found.** On a volatile universe the setup is strongly positive *in-sample*
+(profit factor ~3–4.6) but **breaks even to slightly negative out-of-sample** across every threshold
+combination — the wide stop below a deep capitulation flush hurts reward:risk despite a ~60% win
+rate. No robust *mechanical* edge held forward, which is why the bot ships as a **discretionary
+finder** (see the note at the top). Large-caps rarely flush, so a flush-reclaim finder is best pointed
+at higher-volatility names.
 
 ### Parameter sweep
 
@@ -133,8 +161,8 @@ just curve-fit:
 
 ```bash
 ./scripts/backtest.sh --timeframe 1d \
-  --sweep volume_factor=1.0,1.5,2.0 --sweep min_prominence_pct=0.05,0.08 \
-  --objective profit_factor --oos-split 0.3
+  --sweep flush_atr_mult=1.5,2.0,3.0 --sweep reclaim_window=4,6,8 \
+  --objective total_r --oos-split 0.3
 ```
 
 Each combo is backtested, then trades are split by entry date into in-sample (older) and out-of-sample
@@ -163,7 +191,7 @@ universe it filters more. Configure under `mtf:` in `config.yaml`.
 
 Alerts and the backtest use a **fixed-fractional** sizing model configured under `risk:` in
 `config.yaml` (default: $10k account, 1% risk per trade, 25% max position). For each signal the entry
-is the breakout close and the stop sits below the bottoms, so:
+is the reclaim close and the stop sits just below the flush low, so:
 
 ```
 shares = floor(account_equity x risk_per_trade_pct / (entry - stop))   # capped at max_position_pct
@@ -192,25 +220,28 @@ sends or mutates state:
 ```
 
 It reads alerted patterns from `ddbot.sqlite3`, replays each signal's forward price to label it
-**win / loss / timeout / open** (measured-move target vs stop), and prints live win-rate / avg R /
-profit factor next to the backtest reference. Open positions show unrealized R (marked `*`). Use
+**win / loss / timeout / open** (neckline target vs stop below the flush low), and prints live
+win-rate / avg R / profit factor next to the backtest reference. Open positions show unrealized R
+(marked `*`). Use
 `--since` to exclude the seeded historical baseline and focus on genuine forward signals. Small live
 samples aren't conclusive — this is for tracking, not proof.
 
 ## Risks & limitations
 
-- **False positives are inherent** — prominence + similarity + confirmation gates mitigate, not eliminate.
+- **No validated mechanical edge** — the setup breaks even out-of-sample (see Backtesting); treat
+  alerts as *candidates to review on the chart*, not signals to trade blindly.
+- **False positives are inherent** — the prominence, steep-undercut, volume, and clean-reclaim gates
+  mitigate, not eliminate.
 - **yfinance** is unofficial, has no SLA, and can be delayed or gap; data is split/dividend-adjusted
   (`auto_adjust=True`).
 - **Repaint safety** — only closed bars are used; `drop_forming_bar` trades same-day confirmation for
   safety (see config comments).
-- **Manual confirmation is advised before any trade** — detection is probabilistic. Execution is
-  intentionally *not* part of Phase 1.
+- **Manual confirmation is advised before any trade** — detection is probabilistic and execution is
+  intentionally *not* automated.
 
 ## Roadmap
 
-P2 volume + multi-timeframe confirmation, chart images in alerts · P3 more patterns (triple bottom,
-inverse H&S, ascending triangle) · P4 backtesting engine · P5 risk management (ATR stops, sizing) ·
-P6 fundamental overlay · P7 execution (semi-auto → auto with kill switch).
-
-The `DataProvider`, `Alerter`, and `Pattern` seams exist so these extend without rewrites.
+Done: multi-timeframe confirmation, chart images in alerts, backtesting engine + parameter sweep
+(with out-of-sample guard), risk/position sizing, signal journal. Next: more patterns (triple bottom,
+inverse H&S, ascending triangle) · fundamental overlay · execution (semi-auto → auto with kill
+switch). The `DataProvider`, `Alerter`, and `Pattern` seams exist so these extend without rewrites.
