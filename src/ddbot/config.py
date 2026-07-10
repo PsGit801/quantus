@@ -33,6 +33,11 @@ class DetectionConfig(BaseModel):
 
     # Reclaim (entry trigger)
     reclaim_window: int = 4            # bullish close > B1 low within N bars of B2
+    # The reclaim bar must be a CLEAN bullish candle (small upper wick = no "long head"):
+    # either a full green body OR a bullish pin bar / hammer. Fractions are of the bar range (H-L).
+    reclaim_min_body_frac: float = 0.60       # full green bar: body >= this x range
+    reclaim_max_upper_wick_frac: float = 0.25  # both shapes: upper wick <= this x range
+    reclaim_min_lower_wick_frac: float = 0.50  # hammer: lower wick >= this x range
 
 
 class RiskConfig(BaseModel):

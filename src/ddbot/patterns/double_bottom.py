@@ -3,8 +3,12 @@
 Pattern (enter BELOW the neckline, on a failed breakdown):
 
     B1 (first bottom)  ->  recovery to interim peak (neckline)  ->  steep, high-volume
-    flush that UNDERCUTS B1's low (B2)  ->  a bullish candle reclaims back above B1's low
-    (but still BELOW the neckline) within `reclaim_window` bars  =  ENTRY.
+    flush that UNDERCUTS B1's low (B2)  ->  a CLEAN bullish candle reclaims back above B1's
+    low (but still BELOW the neckline) within `reclaim_window` bars  =  ENTRY.
+
+The reclaim bar must be one of two clean bullish shapes, both with a small upper wick (no
+"long head"): a full green body (marubozu-like), or a bullish pin bar / hammer (small body
+up top, long lower wick). See ``_is_valid_reclaim_bar``.
 
 Stop = the B2 flush low (`DoubleBottom.stop_reference`, which is min(b1_low, b2_low) = b2_low
 after the undercut). Target = the neckline.
@@ -169,11 +173,33 @@ def detect(
     return dedupe_by_neckline(patterns)
 
 
+def _is_valid_reclaim_bar(o: float, h: float, l: float, c: float, cfg: DetectionConfig) -> bool:
+    """A clean bullish reclaim candle: small upper wick (no "long head") plus either a full
+    green body or a bullish pin bar / hammer (long lower wick). Fractions are of the range."""
+    if c <= o:                       # must be a green body
+        return False
+    rng = h - l
+    if rng <= 0:
+        return False
+    upper_wick = h - c               # for a green bar the body top is the close
+    lower_wick = o - l               # ...and the body bottom is the open
+    if upper_wick > cfg.reclaim_max_upper_wick_frac * rng:
+        return False                 # long upper wick -> reject (the FOXA-chart case)
+    body = c - o
+    if body >= cfg.reclaim_min_body_frac * rng:
+        return True                  # full green bar
+    if lower_wick >= cfg.reclaim_min_lower_wick_frac * rng:
+        return True                  # bullish pin bar / hammer
+    return False                     # weak/indecision bar
+
+
 def check_confirmation(
     pattern: DoubleBottom, df: pd.DataFrame, cfg: DetectionConfig
 ) -> DoubleBottom:
     """Confirm on a below-neckline reclaim above B1's low; invalidate on a deeper flush, a
-    reclaim that overshoots the neckline (a straight breakout), or an elapsed window."""
+    reclaim that overshoots the neckline (a straight breakout), or an elapsed window.
+
+    The reclaim bar must be a clean bullish candle (see ``_is_valid_reclaim_bar``)."""
     if df.empty:
         return pattern
 
@@ -183,6 +209,8 @@ def check_confirmation(
 
     j = dates.index(pattern.b2_date)  # the flush-low bar
     opens = df["open"].to_numpy(dtype=float)
+    highs = df["high"].to_numpy(dtype=float)
+    lows = df["low"].to_numpy(dtype=float)
     closes = df["close"].to_numpy(dtype=float)
     b1_low = pattern.b1_low
     flush_low = pattern.stop_reference  # = b2 flush low
@@ -192,7 +220,9 @@ def check_confirmation(
     for i in range(j + 1, reclaim_end + 1):
         if closes[i] < flush_low:
             return pattern.with_state(PatternState.INVALIDATED)  # deeper flush -> reclaim failed
-        if closes[i] > opens[i] and closes[i] > b1_low:
+        if closes[i] > b1_low and _is_valid_reclaim_bar(
+            opens[i], highs[i], lows[i], closes[i], cfg
+        ):
             # A reclaim that overshoots the neckline is a straight breakout, not the
             # below-neckline bear-trap entry we want (target=neckline would be behind entry).
             if closes[i] >= neckline:

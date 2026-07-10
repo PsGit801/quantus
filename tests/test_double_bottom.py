@@ -49,6 +49,36 @@ def test_confirms_on_reclaim():
     assert res.confirm_close == 103.0             # entry (below neckline 114)
 
 
+def test_confirms_on_bullish_hammer():
+    # A green hammer (tiny body up top, long lower wick, tiny upper wick) is a valid reclaim.
+    highs, lows, opens, closes = list(_HIGH), list(_LOW), list(_OPEN), list(_CLOSE)
+    opens[17], closes[17], highs[17], lows[17] = 102.0, 103.0, 103.5, 95.0
+    df = make_ohlcv(lows, highs, closes, opens, _VOL)
+    p = detect(df, "T", "1d", TEST_CFG)[0]
+    res = check_confirmation(p, df, TEST_CFG)
+    assert res.state is PatternState.CONFIRMED
+    assert res.confirm_date == date(2024, 1, 18)  # idx17
+    assert res.confirm_close == 103.0
+
+
+def test_rejects_reclaim_bar_with_long_upper_wick():
+    # The FOXA-chart case: a bar with a long upper "head" is NOT a clean reclaim -> no entry.
+    highs = list(_HIGH)
+    highs[17] = 113.0  # upper wick ~0.56 of range -> rejected; nothing else confirms in window
+    df = make_ohlcv(_LOW, highs, _CLOSE, _OPEN, _VOL)
+    p = detect(df, "T", "1d", TEST_CFG)[0]
+    assert check_confirmation(p, df, TEST_CFG).state is PatternState.INVALIDATED
+
+
+def test_rejects_weak_indecision_reclaim_bar():
+    # Small green body, balanced small wicks: neither a full body nor a hammer -> no entry.
+    highs, lows, opens, closes = list(_HIGH), list(_LOW), list(_OPEN), list(_CLOSE)
+    opens[17], closes[17], highs[17], lows[17] = 101.0, 101.4, 101.6, 100.8
+    df = make_ohlcv(lows, highs, closes, opens, _VOL)
+    p = detect(df, "T", "1d", TEST_CFG)[0]
+    assert check_confirmation(p, df, TEST_CFG).state is PatternState.INVALIDATED
+
+
 def test_invalidated_when_reclaim_overshoots_neckline():
     # A bullish candle that reclaims straight through the neckline is a breakout, not a
     # below-neckline bear-trap entry -> invalidate (target would sit behind the entry).
