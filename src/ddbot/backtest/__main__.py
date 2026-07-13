@@ -23,6 +23,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-hold", type=int, default=60, help="max bars to hold a trade")
     p.add_argument("--target", choices=["neckline", "measured_move", "r_multiple"], default="neckline")
     p.add_argument("--r-target", type=float, default=2.0, help="reward:risk when --target r_multiple")
+    p.add_argument("--stop", choices=["flush_low", "reclaim_bar_low", "atr"], default="flush_low",
+                   help="stop model: deep flush low (default), reclaim-bar low (tight), or ATR-based")
+    p.add_argument("--atr-window", type=int, default=14, help="ATR window when --stop atr")
+    p.add_argument("--atr-mult", type=float, default=1.5, help="stop = entry - mult x ATR when --stop atr")
     p.add_argument("--csv", help="write individual trades to this CSV path")
     p.add_argument(
         "--sweep", action="append", default=[],
@@ -44,7 +48,10 @@ def main(argv: list[str] | None = None) -> int:
     tickers = args.tickers or cfg.tickers
     detection = cfg.detection
 
-    bt = BacktestConfig(target=args.target, r_target=args.r_target, max_hold_bars=args.max_hold)
+    bt = BacktestConfig(
+        target=args.target, r_target=args.r_target, max_hold_bars=args.max_hold,
+        stop=args.stop, atr_window=args.atr_window, atr_mult=args.atr_mult,
+    )
     provider = YahooDataProvider(drop_forming_bar=cfg.drop_forming_bar)
 
     # --- sweep mode -----------------------------------------------------------
@@ -84,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     if all_trades:
         span = f"  ({min(t.entry_date for t in all_trades)} → {max(t.exit_date for t in all_trades)})"
     mtf_note = f", MTF={'on' if use_mtf else 'off'}"
-    print(f"\nDouble-bottom backtest — {args.timeframe}, target={args.target}{mtf_note}{span}\n")
+    print(f"\nDouble-bottom backtest — {args.timeframe}, stop={args.stop}, target={args.target}{mtf_note}{span}\n")
     print(format_report(per_ticker, overall))
     print()
 

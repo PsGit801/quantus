@@ -15,7 +15,7 @@ import pandas as pd
 
 from ..config import DetectionConfig
 from ..patterns.base import DoubleBottom, PatternState
-from ..patterns.double_bottom import check_confirmation, detect
+from ..patterns.double_bottom import _atr, check_confirmation, detect
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,9 @@ class BacktestConfig:
     target: str = "neckline"       # "neckline" | "measured_move" | "r_multiple"
     r_target: float = 2.0          # used when target == "r_multiple"
     max_hold_bars: int = 60
+    stop: str = "flush_low"        # "flush_low" | "reclaim_bar_low" | "atr"
+    atr_window: int = 14           # used when stop == "atr"
+    atr_mult: float = 1.5          # stop = entry - atr_mult x ATR when stop == "atr"
 
 
 @dataclass(frozen=True)
@@ -79,6 +82,23 @@ def find_signals(
     return sorted(unique.values(), key=lambda p: p.confirm_date)
 
 
+def _stop_price(p: DoubleBottom, df: pd.DataFrame, j: int, entry: float, bt: BacktestConfig) -> float:
+    """Stop for the trade. Default is the deep flush low; alternatives are tighter, to
+    improve reward:risk on a below-neckline reclaim entry (studied via the backtest)."""
+    if bt.stop == "reclaim_bar_low":
+        return float(df["low"].iloc[j])         # just under the reclaim (entry) bar
+    if bt.stop == "atr":
+        atr = _atr(
+            df["high"].to_numpy(dtype=float),
+            df["low"].to_numpy(dtype=float),
+            df["close"].to_numpy(dtype=float),
+            j, bt.atr_window,
+        )
+        if atr is not None and atr > 0:
+            return entry - bt.atr_mult * atr
+    return p.stop_reference                      # "flush_low" (default) and fallback
+
+
 def _target_price(p: DoubleBottom, entry: float, stop: float, bt: BacktestConfig) -> float:
     if bt.target == "r_multiple":
         return entry + bt.r_target * (entry - stop)
@@ -98,7 +118,7 @@ def simulate_trade(
     j = dates.index(p.confirm_date)
 
     entry = p.confirm_close
-    stop = p.stop_reference
+    stop = _stop_price(p, df, j, entry, bt)
     risk = entry - stop
     target = _target_price(p, entry, stop, bt)
     if risk <= 0 or target <= entry:

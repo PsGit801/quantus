@@ -140,6 +140,7 @@ flush low and the **neckline as the target** by default):
 ./scripts/backtest.sh --timeframe 1wk --history-bars 600 --csv trades.csv
 ./scripts/backtest.sh --timeframe 1d --target measured_move        # neckline + (neckline - stop)
 ./scripts/backtest.sh --timeframe 1d --target r_multiple --r-target 2   # fixed 2:1 exits
+./scripts/backtest.sh --timeframe 1d --stop atr --atr-mult 3.5 --target measured_move  # volatility stop
 ```
 
 Reports per-ticker + overall: trades, win %, avg R (expectancy), total R, profit factor, max drawdown

@@ -78,6 +78,45 @@ def test_simulate_skips_degenerate_risk():
     assert simulate_trade(df, p, BacktestConfig()) is None
 
 
+# --- stop models ----------------------------------------------------------------
+
+def test_stop_reclaim_bar_low_tightens_risk():
+    # Reclaim-bar (confirm bar i=2) low is 104, vs the flush low 100. Tighter stop -> bigger R.
+    df = _forward_df(
+        highs=[106, 106, 106, 111, 111, 111],
+        lows=[104, 104, 104, 106, 106, 106],
+        closes=[105, 105, 105, 108, 108, 108],
+    )
+    tr = simulate_trade(df, _pattern(df), BacktestConfig(stop="reclaim_bar_low"))
+    assert tr.stop == 104.0
+    assert tr.outcome == "win"
+    assert tr.r_multiple == 5.0            # (110-105)/(105-104) vs 1.0 with the flush-low stop
+
+
+def test_stop_reclaim_bar_low_stops_out_where_flush_would_hold():
+    # A dip to 103: below the tight reclaim-bar stop (104) but above the flush low (100).
+    df = _forward_df(
+        highs=[106, 106, 106, 108, 111, 111],
+        lows=[104, 104, 104, 103, 106, 106],
+        closes=[105, 105, 105, 106, 108, 108],
+    )
+    tight = simulate_trade(df, _pattern(df), BacktestConfig(stop="reclaim_bar_low"))
+    assert tight.outcome == "loss" and tight.stop == 104.0
+    wide = simulate_trade(df, _pattern(df), BacktestConfig(stop="flush_low"))
+    assert wide.outcome == "win" and wide.stop == 100.0
+
+
+def test_stop_atr_sits_between_flush_and_reclaim_bar():
+    df = _forward_df(
+        highs=[106, 106, 106, 111, 111, 111],
+        lows=[104, 104, 104, 106, 106, 106],
+        closes=[105, 105, 105, 108, 108, 108],
+    )
+    tr = simulate_trade(df, _pattern(df), BacktestConfig(stop="atr", atr_window=2, atr_mult=1.5))
+    assert 100.0 < tr.stop < 104.0         # ATR-derived, between the flush low and the reclaim-bar low
+    assert tr.outcome == "win"
+
+
 # --- walk-forward signal discovery (no look-ahead) ------------------------------
 
 def test_find_signals_confirms_on_reclaim():
