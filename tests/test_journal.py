@@ -70,3 +70,38 @@ def test_alerted_patterns_returns_only_alerted(tmp_path):
     got = s.alerted_patterns()
     assert len(got) == 1 and got[0].ticker == "T"
     s.close()
+
+
+def test_migration_adds_exit_columns_to_old_db(tmp_path):
+    # An existing DB created before stop_price/target_price existed must migrate on open.
+    import sqlite3
+    path = str(tmp_path / "old.sqlite3")
+    con = sqlite3.connect(path)
+    con.executescript(
+        "CREATE TABLE patterns (pattern_id TEXT PRIMARY KEY, ticker TEXT, timeframe TEXT, "
+        "state TEXT, b1_date TEXT, b1_low REAL, b2_date TEXT, b2_low REAL, peak_date TEXT, "
+        "neckline REAL, confirm_date TEXT, confirm_close REAL, alerted INTEGER DEFAULT 0);"
+    )
+    con.commit()
+    con.close()
+    s = PatternStore(path)  # opening runs _migrate()
+    cols = {r["name"] for r in s.conn.execute("PRAGMA table_info(patterns)")}
+    assert {"stop_price", "target_price"} <= cols
+    s.close()
+
+
+def test_store_roundtrips_exit_levels(tmp_path):
+    # stop_price / target_price persist through update_state and reload.
+    s = PatternStore(str(tmp_path / "s.sqlite3"))
+    p = _sig(_fwd([1, 1, 1], [1, 1, 1], [1, 1, 1]))
+    s.upsert_detected(p)
+    confirmed = p.with_state(
+        PatternState.CONFIRMED, confirm_date=p.confirm_date, confirm_close=p.confirm_close,
+        stop_price=97.5, target_price=132.5,
+    )
+    s.update_state(confirmed)
+    s.mark_alerted(p.pattern_id)
+    got = s.alerted_patterns()[0]
+    assert got.stop_price == 97.5 and got.target_price == 132.5
+    assert got.stop_reference == 97.5 and got.target == 132.5
+    s.close()

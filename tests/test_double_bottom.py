@@ -100,6 +100,30 @@ def test_invalidated_when_reclaim_overshoots_neckline():
     assert check_confirmation(p, df, TEST_CFG).state is PatternState.INVALIDATED
 
 
+def test_confirmation_sets_atr_stop_and_measured_target():
+    # Live default exit model: stop = entry - mult x ATR, target = measured move off the neckline.
+    cfg = TEST_CFG.model_copy(update={
+        "stop_mode": "atr", "stop_atr_window": 5, "stop_atr_mult": 2.0,
+        "target_mode": "measured_move",
+    })
+    df = flush_reclaim()
+    p = detect(df, "T", "1d", cfg)[0]
+    res = check_confirmation(p, df, cfg)
+    assert res.state is PatternState.CONFIRMED
+    assert res.stop_price is not None and res.stop_price < res.confirm_close
+    assert res.stop_price != min(res.b1_low, res.b2_low)          # not the flush low
+    assert abs(res.target_price - (res.neckline + (res.neckline - res.stop_price))) < 1e-9
+    assert res.stop_reference == res.stop_price and res.target == res.target_price
+
+
+def test_confirmation_flush_low_stop_matches_bottom():
+    cfg = TEST_CFG.model_copy(update={"stop_mode": "flush_low", "target_mode": "neckline"})
+    df = flush_reclaim()
+    res = check_confirmation(detect(df, "T", "1d", cfg)[0], df, cfg)
+    assert res.stop_price == min(res.b1_low, res.b2_low)          # the flush low (88)
+    assert res.target_price == res.neckline
+
+
 def test_invalidated_on_deeper_flush_before_reclaim():
     closes = list(_CLOSE)
     closes[16] = 85.0  # closes below the flush low (88) -> failed

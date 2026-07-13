@@ -21,10 +21,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--timeframe", default="1d")
     p.add_argument("--history-bars", type=int, default=1000, help="bars of history to fetch")
     p.add_argument("--max-hold", type=int, default=60, help="max bars to hold a trade")
-    p.add_argument("--target", choices=["neckline", "measured_move", "r_multiple"], default="neckline")
+    p.add_argument("--target", choices=["pattern", "neckline", "measured_move", "r_multiple"],
+                   default="pattern", help="'pattern' = the live strategy's target (default)")
     p.add_argument("--r-target", type=float, default=2.0, help="reward:risk when --target r_multiple")
-    p.add_argument("--stop", choices=["flush_low", "reclaim_bar_low", "atr"], default="flush_low",
-                   help="stop model: deep flush low (default), reclaim-bar low (tight), or ATR-based")
+    p.add_argument("--stop", choices=["pattern", "flush_low", "reclaim_bar_low", "atr"],
+                   default="pattern",
+                   help="'pattern' = the live strategy's stop (default); or override for research")
     p.add_argument("--atr-window", type=int, default=14, help="ATR window when --stop atr")
     p.add_argument("--atr-mult", type=float, default=1.5, help="stop = entry - mult x ATR when --stop atr")
     p.add_argument("--csv", help="write individual trades to this CSV path")

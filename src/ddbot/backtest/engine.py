@@ -20,10 +20,12 @@ from ..patterns.double_bottom import _atr, check_confirmation, detect
 
 @dataclass(frozen=True)
 class BacktestConfig:
-    target: str = "neckline"       # "neckline" | "measured_move" | "r_multiple"
+    # "pattern" (default) uses the exit levels the live strategy computed at confirmation;
+    # the others are research overrides for the exit-model study.
+    target: str = "pattern"        # "pattern" | "neckline" | "measured_move" | "r_multiple"
     r_target: float = 2.0          # used when target == "r_multiple"
     max_hold_bars: int = 60
-    stop: str = "flush_low"        # "flush_low" | "reclaim_bar_low" | "atr"
+    stop: str = "pattern"          # "pattern" | "flush_low" | "reclaim_bar_low" | "atr"
     atr_window: int = 14           # used when stop == "atr"
     atr_mult: float = 1.5          # stop = entry - atr_mult x ATR when stop == "atr"
 
@@ -87,6 +89,8 @@ def _stop_price(p: DoubleBottom, df: pd.DataFrame, j: int, entry: float, bt: Bac
     improve reward:risk on a below-neckline reclaim entry (studied via the backtest)."""
     if bt.stop == "reclaim_bar_low":
         return float(df["low"].iloc[j])         # just under the reclaim (entry) bar
+    if bt.stop == "flush_low":
+        return min(p.b1_low, p.b2_low)          # the deep flush low, ignoring any stored stop
     if bt.stop == "atr":
         atr = _atr(
             df["high"].to_numpy(dtype=float),
@@ -96,7 +100,7 @@ def _stop_price(p: DoubleBottom, df: pd.DataFrame, j: int, entry: float, bt: Bac
         )
         if atr is not None and atr > 0:
             return entry - bt.atr_mult * atr
-    return p.stop_reference                      # "flush_low" (default) and fallback
+    return p.stop_reference                      # "pattern": the strategy's stored stop
 
 
 def _target_price(p: DoubleBottom, entry: float, stop: float, bt: BacktestConfig) -> float:
@@ -104,8 +108,9 @@ def _target_price(p: DoubleBottom, entry: float, stop: float, bt: BacktestConfig
         return entry + bt.r_target * (entry - stop)
     if bt.target == "measured_move":
         return p.neckline + (p.neckline - stop)
-    # neckline (default): first resistance for a below-neckline reclaim entry
-    return p.neckline
+    if bt.target == "neckline":
+        return p.neckline
+    return p.target                              # "pattern": the strategy's stored target
 
 
 def simulate_trade(

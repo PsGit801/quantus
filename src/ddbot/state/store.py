@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS patterns (
     neckline      REAL NOT NULL,
     confirm_date  TEXT,
     confirm_close REAL,
+    stop_price    REAL,
+    target_price  REAL,
     alerted       INTEGER NOT NULL DEFAULT 0
 );
 
@@ -62,6 +64,8 @@ def _row_to_pattern(row: sqlite3.Row) -> DoubleBottom:
         state=PatternState(row["state"]),
         confirm_date=_parse_date(row["confirm_date"]),
         confirm_close=row["confirm_close"],
+        stop_price=row["stop_price"],
+        target_price=row["target_price"],
     )
 
 
@@ -72,7 +76,15 @@ class PatternStore:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(_SCHEMA)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Add columns introduced after a DB was first created (SQLite has no IF NOT EXISTS)."""
+        cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(patterns)")}
+        for col in ("stop_price", "target_price"):
+            if col not in cols:
+                self.conn.execute(f"ALTER TABLE patterns ADD COLUMN {col} REAL")
 
     def close(self) -> None:
         self.conn.close()
@@ -90,13 +102,15 @@ class PatternStore:
             """
             INSERT OR IGNORE INTO patterns
                 (pattern_id, ticker, timeframe, state, b1_date, b1_low,
-                 b2_date, b2_low, peak_date, neckline, confirm_date, confirm_close, alerted)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                 b2_date, b2_low, peak_date, neckline, confirm_date, confirm_close,
+                 stop_price, target_price, alerted)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """,
             (
                 p.pattern_id, p.ticker, p.timeframe, p.state.value,
                 _iso(p.b1_date), p.b1_low, _iso(p.b2_date), p.b2_low,
                 _iso(p.peak_date), p.neckline, _iso(p.confirm_date), p.confirm_close,
+                p.stop_price, p.target_price,
             ),
         )
         self.conn.commit()
@@ -106,10 +120,12 @@ class PatternStore:
         self.conn.execute(
             """
             UPDATE patterns
-               SET state = ?, confirm_date = ?, confirm_close = ?
+               SET state = ?, confirm_date = ?, confirm_close = ?,
+                   stop_price = ?, target_price = ?
              WHERE pattern_id = ?
             """,
-            (p.state.value, _iso(p.confirm_date), p.confirm_close, p.pattern_id),
+            (p.state.value, _iso(p.confirm_date), p.confirm_close,
+             p.stop_price, p.target_price, p.pattern_id),
         )
         self.conn.commit()
 

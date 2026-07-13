@@ -25,6 +25,10 @@ TEST_CFG = DetectionConfig(
     reclaim_min_body_frac=0.60,
     reclaim_max_upper_wick_frac=0.15,
     reclaim_min_lower_wick_frac=0.50,
+    # Pin the exit model to the simple flush-low/neckline so fixture expectations are stable
+    # (the live default is atr/measured_move; exercised in test_double_bottom directly).
+    stop_mode="flush_low",
+    target_mode="neckline",
 )
 
 # A flush-reclaim: decline into B1 (idx5, low 100), recover to a peak (idx12, high 114),

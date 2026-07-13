@@ -27,6 +27,10 @@ class DoubleBottom:
     state: PatternState = PatternState.DETECTED
     confirm_date: date | None = None
     confirm_close: float | None = None
+    # Exit levels computed at confirmation (strategy-configured; see check_confirmation).
+    # None until confirmed, then fall back to the flush low / neckline respectively.
+    stop_price: float | None = None
+    target_price: float | None = None
 
     @property
     def pattern_id(self) -> str:
@@ -36,8 +40,17 @@ class DoubleBottom:
 
     @property
     def stop_reference(self) -> float:
-        """Suggested invalidation / stop level: below the lower of the two bottoms."""
+        """The trade's stop: the configured stop computed at confirmation if present,
+        else the fallback below the lower of the two bottoms (the flush low)."""
+        if self.stop_price is not None:
+            return self.stop_price
         return min(self.b1_low, self.b2_low)
+
+    @property
+    def target(self) -> float:
+        """The trade's target: the configured target computed at confirmation if present,
+        else the neckline (first resistance for a below-neckline reclaim entry)."""
+        return self.target_price if self.target_price is not None else self.neckline
 
     def with_state(self, state: PatternState, **kwargs) -> "DoubleBottom":
         return replace(self, state=state, **kwargs)

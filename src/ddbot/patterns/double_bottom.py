@@ -193,6 +193,29 @@ def _is_valid_reclaim_bar(o: float, h: float, l: float, c: float, cfg: Detection
     return False                     # weak/indecision bar
 
 
+def compute_stop(
+    entry: float, flush_low: float, reclaim_bar_low: float,
+    highs, lows, closes, confirm_idx: int, cfg: DetectionConfig,
+) -> float:
+    """The trade's stop, per cfg.stop_mode. Default 'atr' = entry - mult x ATR (a volatility-
+    scaled stop that a backtest exit study found holds out-of-sample); 'reclaim_bar_low' is
+    tight (below the entry bar); 'flush_low' is the original deep-flush stop and the fallback."""
+    if cfg.stop_mode == "reclaim_bar_low":
+        return reclaim_bar_low
+    if cfg.stop_mode == "atr":
+        atr = _atr(highs, lows, closes, confirm_idx, cfg.stop_atr_window)
+        if atr is not None and atr > 0:
+            return entry - cfg.stop_atr_mult * atr
+    return flush_low
+
+
+def compute_target(neckline: float, stop: float, cfg: DetectionConfig) -> float:
+    """The trade's target, per cfg.target_mode: a measured move off the neckline, or the neckline."""
+    if cfg.target_mode == "measured_move":
+        return neckline + (neckline - stop)
+    return neckline
+
+
 def check_confirmation(
     pattern: DoubleBottom, df: pd.DataFrame, cfg: DetectionConfig
 ) -> DoubleBottom:
@@ -227,10 +250,14 @@ def check_confirmation(
             # below-neckline bear-trap entry we want (target=neckline would be behind entry).
             if closes[i] >= neckline:
                 return pattern.with_state(PatternState.INVALIDATED)
+            entry = float(closes[i])
+            stop_px = compute_stop(entry, flush_low, float(lows[i]), highs, lows, closes, i, cfg)
             return pattern.with_state(
                 PatternState.CONFIRMED,
                 confirm_date=dates[i],
-                confirm_close=float(closes[i]),
+                confirm_close=entry,
+                stop_price=stop_px,
+                target_price=compute_target(neckline, stop_px, cfg),
             )
 
     # No reclaim: if the window has fully elapsed, the setup is dead.

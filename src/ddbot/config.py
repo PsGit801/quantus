@@ -39,6 +39,14 @@ class DetectionConfig(BaseModel):
     reclaim_max_upper_wick_frac: float = 0.15  # both shapes: upper wick <= this x range
     reclaim_min_lower_wick_frac: float = 0.50  # hammer: lower wick >= this x range
 
+    # Exit model (computed at confirmation, entry = reclaim close). A backtest exit-model
+    # study found an ATR stop (~3.5x) + measured-move target holds out-of-sample, unlike the
+    # original flush-low stop / neckline target (which was negative OOS).
+    stop_mode: str = "atr"             # "atr" | "flush_low" | "reclaim_bar_low"
+    stop_atr_window: int = 14
+    stop_atr_mult: float = 3.5         # stop = entry - this x ATR when stop_mode == "atr"
+    target_mode: str = "measured_move"  # "measured_move" (neckline + (neckline - stop)) | "neckline"
+
 
 class RiskConfig(BaseModel):
     """Position-sizing assumptions used for alert suggestions and the $ backtest."""

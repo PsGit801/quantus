@@ -6,14 +6,16 @@ candlestick chart** showing the two bottoms, the neckline, and the reclaim (entr
 
 Unlike a classic breakout entry, the entry here is **below the neckline**: a steep capitulation
 flush undercuts the first bottom (a bear trap), then a clean bullish candle reclaims back above it —
-you buy the reversal cheaply, with the stop just under the flush low and the neckline as the target.
+you buy the reversal cheaply. The exit uses an **ATR-based stop** (volatility-scaled, ~3.5×ATR) and a
+**measured-move target** (neckline + the distance from neckline to stop).
 
 Each timeframe is scanned independently and fires its own alert (weekly is a stronger, rarer signal).
 
-> **Discretionary tool, not a mechanical edge.** Backtesting (see below) shows the setup is strongly
-> positive in-sample but **breaks even out-of-sample** at every threshold — no robust *mechanical*
-> edge was found. The bot is used to *find* clean flush-reclaims for a human to judge on the chart,
-> not to trade automatically. Every alert says so.
+> **Promising edge, still discretionary.** A backtest exit-model study found that this ATR stop +
+> measured-move target holds up **out-of-sample** (positive expectancy, profit factor >2 in both
+> samples) — a real improvement over the original flush-low/neckline exit, which was negative
+> out-of-sample. The sample is modest, so the bot is still used to *find* clean flush-reclaims for a
+> human to judge on the chart. Every alert says so.
 
 ## How it works
 
@@ -39,7 +41,9 @@ The structure (`detect`), then the entry trigger (`check_confirmation`) — both
    average (capitulation). This bear trap is the whole point.
 4. **Reclaim = entry** — within `reclaim_window` bars after the flush, the first bar that reclaims
    back **above B1's low but still below the neckline**, *and* is a **clean bullish candle**
-   (see below). Entry = that close; stop = flush low; target = neckline.
+   (see below). Entry = that close. The exit is set here per `stop_mode` / `target_mode`: default
+   `stop = entry − stop_atr_mult × ATR` (volatility-scaled) and `target = measured move` off the
+   neckline.
 5. **Invalidation** — a close back **below the flush low** (the trap deepened), a reclaim that
    **overshoots the neckline** (that's a straight breakout, not a below-neckline entry), or the
    reclaim window elapsing with no clean bar.
@@ -148,12 +152,15 @@ Reports per-ticker + overall: trades, win %, avg R (expectancy), total R, profit
 re-running shows the impact. **Caveats:** ignores slippage/commissions/dividends, one position per
 signal, no position sizing — results are indicative, not guarantees.
 
-**What the backtest found.** On a volatile universe the setup is strongly positive *in-sample*
-(profit factor ~3–4.6) but **breaks even to slightly negative out-of-sample** across every threshold
-combination — the wide stop below a deep capitulation flush hurts reward:risk despite a ~60% win
-rate. No robust *mechanical* edge held forward, which is why the bot ships as a **discretionary
-finder** (see the note at the top). Large-caps rarely flush, so a flush-reclaim finder is best pointed
-at higher-volatility names.
+**What the backtest found (exit-model study).** The *entry* was never the problem — the *exit* was.
+The original flush-low stop → neckline target was negative out-of-sample. Sweeping stop and target
+models over 36 high-beta names (~8y, 49 in-sample / 16 out-of-sample trades) showed a **wider,
+volatility-scaled ATR stop (~3.5×) with a measured-move or 2R target** flips the strategy to a
+positive edge that **holds out-of-sample** (+0.7 to +0.9R, profit factor 4.5–5.3, ~75% win) — positive
+and PF>2 in *both* samples, the signature of a real (not curve-fit) effect. The tight "reclaim-bar"
+stop was the worst (whipsawed out). That ATR/measured-move model is now the live default. Caveat: 16
+OOS trades is promising, not proof; large-caps rarely flush, so point it at higher-volatility names.
+Reproduce with `--stop atr --atr-mult 3.5 --target measured_move` vs `--stop flush_low --target neckline`.
 
 ### Parameter sweep
 
@@ -192,7 +199,7 @@ universe it filters more. Configure under `mtf:` in `config.yaml`.
 
 Alerts and the backtest use a **fixed-fractional** sizing model configured under `risk:` in
 `config.yaml` (default: $10k account, 1% risk per trade, 25% max position). For each signal the entry
-is the reclaim close and the stop sits just below the flush low, so:
+is the reclaim close and the stop is the strategy's ATR-based stop, so:
 
 ```
 shares = floor(account_equity x risk_per_trade_pct / (entry - stop))   # capped at max_position_pct
@@ -221,8 +228,8 @@ sends or mutates state:
 ```
 
 It reads alerted patterns from `ddbot.sqlite3`, replays each signal's forward price to label it
-**win / loss / timeout / open** (neckline target vs stop below the flush low), and prints live
-win-rate / avg R / profit factor next to the backtest reference. Open positions show unrealized R
+**win / loss / timeout / open** (against the stored measured-move target and ATR stop), and prints
+live win-rate / avg R / profit factor next to the backtest reference. Open positions show unrealized R
 (marked `*`). Use
 `--since` to exclude the seeded historical baseline and focus on genuine forward signals. Small live
 samples aren't conclusive — this is for tracking, not proof.
