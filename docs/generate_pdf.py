@@ -121,327 +121,383 @@ def image(filename, caption, max_w=15.5 * cm):
 story.append(Spacer(1, 4 * cm))
 story.append(Paragraph("Quantus", TITLE))
 story.append(Spacer(1, 0.3 * cm))
-story.append(Paragraph("Double-Bottom Chart-Pattern Scanner &amp; Alert Bot", SUB))
-story.append(Paragraph("Design, Backend Architecture &amp; Trading Concepts", SUB))
+story.append(Paragraph("A Double-Bottom &ldquo;Flush-Reclaim&rdquo; Chart-Pattern Scanner &amp; Alert Bot", SUB))
+story.append(Paragraph("Design, Backend Architecture &amp; Trading Concepts &mdash; explained from scratch", SUB))
 story.append(Spacer(1, 1.2 * cm))
-story.append(Paragraph("Technical Design Document &mdash; generated 2026-07-06", CENTER))
+story.append(Paragraph("Technical Design Document &mdash; generated 2026-07-13", CENTER))
 story.append(Spacer(1, 1.5 * cm))
 story.append(Paragraph(
-    "Quantus watches a configurable watchlist (the Magnificent 7 by default) on the daily and weekly "
-    "timeframes, algorithmically detects the <b>double-bottom</b> reversal pattern, waits for a "
-    "volume-backed bullish breakout above the neckline to confirm it, and then pushes an alert &mdash; "
-    "with an annotated candlestick chart &mdash; to Telegram and Discord. It includes an interactive "
-    "Telegram bot for managing the watchlist and a full backtesting engine (with parameter sweeps and "
-    "out-of-sample validation) for measuring the strategy's historical edge.", BODY))
+    "Quantus watches a list of stocks on the daily and weekly timeframes and looks for one specific "
+    "chart setup: a <b>double-bottom &ldquo;flush-reclaim&rdquo;</b> (a bear trap). When it finds one, it sends "
+    "you a message on Telegram and Discord &mdash; with a labelled price chart, a suggested entry, stop, "
+    "and target, and a position size. It does <b>not</b> place trades; a human decides. This document "
+    "explains what all of that means, starting from &ldquo;what is a candlestick,&rdquo; so a reader new to "
+    "trading and charts can follow the whole design.", BODY))
+story.append(Spacer(1, 0.6 * cm))
+story.append(Paragraph(
+    "<i>Nothing here is financial advice. Quantus is a personal research and alerting tool.</i>", CENTER))
 story.append(PageBreak())
 
 # ============================== 1. OVERVIEW ===================================
-h1("1. What Quantus Is")
-p("Quantus is a personal, single-user quantitative trading <b>alert</b> system. It does not place "
-  "trades; it surfaces high-quality technical setups and leaves the execution decision to the human. "
-  "The design goal is a clean, testable, deterministic pipeline that a trader can trust, inspect, and "
-  "tune against historical data.")
+h1("1. What Quantus Is (in plain terms)")
+p("Quantus is a personal, single-user program that <b>scans stock charts and alerts you</b> when a "
+  "particular bullish reversal setup appears. Think of it as a tireless assistant that watches your "
+  "watchlist every day and taps you on the shoulder &mdash; with a chart and the key numbers &mdash; "
+  "when something worth a look shows up. You still make every trading decision yourself.")
 h2("At a glance")
 bullets([
-    "<b>Data:</b> free end-of-day OHLCV from Yahoo Finance (via the <font face='Courier'>yfinance</font> library).",
-    "<b>Universe:</b> a watchlist stored in SQLite, seeded from config (AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA), editable live from Telegram.",
-    "<b>Timeframes:</b> daily and weekly, scanned independently.",
-    "<b>Pattern:</b> double bottom, confirmed by a bullish, volume-backed close above the neckline.",
-    "<b>Delivery:</b> Telegram + Discord, each alert carrying an annotated chart image.",
-    "<b>Scheduling:</b> a once-daily scan run by the hermes cron scheduler; an always-on listener for instant Telegram interaction.",
-    "<b>Validation:</b> a walk-forward backtester and a parameter sweep with in-sample / out-of-sample splitting.",
+    "<b>Data:</b> free end-of-day price history from Yahoo Finance (via the <font face='Courier'>yfinance</font> library). No paid data feed.",
+    "<b>Watchlist:</b> ~23 higher-volatility stocks (e.g. PLTR, COIN, RIVN, HOOD, FOXA), stored in a small database and editable live from Telegram. Volatile names are used because the setup depends on sharp sell-offs, which calm large-caps rarely produce.",
+    "<b>Timeframes:</b> daily and weekly, scanned separately (a weekly signal is rarer and stronger).",
+    "<b>The setup:</b> a double-bottom <i>flush-reclaim</i> &mdash; explained step by step in Sections 2&ndash;5.",
+    "<b>Each alert carries:</b> a labelled candlestick chart, the entry / stop / target, the reward-to-risk ratio, and a suggested position size.",
+    "<b>Scheduling:</b> a once-a-day scan run automatically; plus an always-on helper so the Telegram buttons respond instantly.",
+    "<b>Honesty built in:</b> a backtester and a parameter sweep measure whether the idea actually works on history, with an out-of-sample check that guards against fooling ourselves.",
 ])
-p("The codebase is Python 3.11, organized as the <font face='Courier'>ddbot</font> package, with 53 "
-  "automated tests. Every component is behind an interface (data provider, alerter, pattern) so pieces "
-  "can be swapped without rewrites.")
+p("The code is Python 3.11 (the <font face='Courier'>ddbot</font> package) with 85 automated tests. Every "
+  "part sits behind a clean interface (data source, alerter, pattern, store) so pieces can be swapped "
+  "without rewrites. <b>Important framing:</b> as the backtesting section shows, this strategy does not "
+  "yet have a <i>proven</i> mechanical edge &mdash; so Quantus is used as a <b>discretionary finder</b> "
+  "(it finds candidates; you judge each chart), not an auto-trader.")
 
-# ============================== 2. CONCEPTS ===================================
-h1("2. Fundamentals: The Concepts Behind the Bot")
-p("This section explains the technical-analysis and quantitative ideas the bot relies on, so the logic "
-  "in later sections is meaningful.")
+# ============================== 2. CHARTS 101 =================================
+h1("2. Charts 101: How to Read the Pictures")
+p("Everything Quantus does is built on the <b>candlestick chart</b>. If you already read charts, skim "
+  "this; if not, this section gives you the whole vocabulary the rest of the document uses.")
 
-h2("2.1 The double bottom (and the neckline)")
-p("A <b>double bottom</b> is a bullish reversal pattern shaped like a 'W'. After a decline, price "
-  "makes a low (Bottom 1), rebounds to an interim peak, falls again to roughly the same level "
-  "(Bottom 2), then rallies. The two bottoms mark a support level buyers defended twice. The "
-  "<b>neckline</b> is the interim peak between the bottoms &mdash; the resistance that price must break "
-  "to confirm the reversal. A close above the neckline signals that buyers have overwhelmed the sellers "
-  "who were capping the rebound.")
-image("anatomy.png", "Figure 1. The anatomy of a double bottom: two bottoms at a shared support, the "
-      "neckline (resistance) between them, prominence (depth), and the confirming breakout. The stop "
-      "sits below the bottoms; the measured-move target projects the pattern height above the neckline.")
+h2("2.1 What a candlestick is")
+p("Each candlestick summarises the price action for one period of time (one day on the daily chart, one "
+  "week on the weekly). It records four prices: the <b>open</b> (first trade of the period), the "
+  "<b>high</b> (highest price reached), the <b>low</b> (lowest), and the <b>close</b> (last trade). The "
+  "thick part is the <b>body</b> (open&ndash;to&ndash;close); the thin lines above and below are the "
+  "<b>wicks</b> (also called shadows or tails), reaching to the high and the low. By convention the "
+  "candle is <b>green</b> when price closed higher than it opened (buyers won the period) and <b>red</b> "
+  "when it closed lower (sellers won).")
+image("candles.png", "Figure 1. A candlestick records four prices (open, high, low, close). The body is "
+      "open-to-close; the wicks reach to the high and low. Four shapes matter for this strategy: a full "
+      "green bar (closes near its high), a bullish hammer (long lower wick = buyers rejected lower "
+      "prices), a long-upper-wick bar (a rally that got sold off before the close &mdash; NOT a clean "
+      "entry here), and a red bar.")
+p("<b>Why the wicks matter so much here:</b> a long <b>upper</b> wick means price pushed up during the "
+  "period but was <b>sold back down</b> before the close &mdash; a sign of sellers overhead. A long "
+  "<b>lower</b> wick (a &ldquo;hammer&rdquo; or &ldquo;pin bar&rdquo;) means price dropped but buyers "
+  "<b>rejected</b> the lower prices and pushed the close back up &mdash; a bullish sign. Quantus only "
+  "treats a candle as a valid entry trigger if it is a clean bullish shape (a full green body or a "
+  "hammer) with a <i>small</i> upper wick.")
 
-h2("2.2 Swing points (fractals)")
-p("To find the bottoms and the neckline objectively, the bot detects <b>swing points</b>. A bar is a "
-  "<b>swing low</b> if its low is the lowest within a symmetric window of <font face='Courier'>k</font> "
-  "bars on each side (a 'fractal'); a swing high is the mirror image. This turns a subjective visual "
-  "pattern into a precise, reproducible rule.")
+h2("2.2 Support, resistance, and trend")
+p("<b>Support</b> is a price level where buyers have repeatedly stepped in and stopped a decline (a "
+  "&ldquo;floor&rdquo;). <b>Resistance</b> is the mirror image: a level where sellers repeatedly cap a "
+  "rally (a &ldquo;ceiling&rdquo;). A <b>trend</b> is the general direction &mdash; a downtrend is a "
+  "series of lower lows. These three words are all we need: the strategy is about price falling into a "
+  "support area, being pushed below it in a trap, and then reversing.")
 
-h2("2.3 Prominence")
-p("Not every wiggle is a real 'W'. <b>Prominence</b> measures how far the neckline sits above the "
-  "bottoms as a percentage. Requiring a minimum prominence (default 5%) discards shallow, sideways "
-  "noise and keeps structures with genuine depth &mdash; the single most effective false-positive filter.")
+# ============================== 3. CONCEPTS ===================================
+h1("3. The Strategy&rsquo;s Ideas, One at a Time")
 
-h2("2.4 Confirmation and no-repaint discipline")
-p("A pattern is only a <b>candidate</b> until price actually breaks out. Confirmation requires the first "
-  "candle after Bottom 2 to close above the neckline (plus a small buffer) as a green (bullish) candle. "
-  "Crucially, the bot acts only on <b>closed</b> bars &mdash; the still-forming current bar is dropped "
-  "&mdash; because a forming bar can 'repaint' (change) before it closes. This avoids the classic "
-  "backtest-vs-live discrepancy where a strategy looks good only because it peeked at data that did not "
-  "yet exist.")
+h2("3.1 The double bottom and the neckline")
+p("A <b>double bottom</b> is a bullish reversal shaped like the letter &ldquo;W.&rdquo; After a decline, "
+  "price makes a low (<b>Bottom 1</b>), bounces up to an interim <b>peak</b>, falls again toward the "
+  "same area, and eventually turns back up. The two bottoms mark a support level that buyers defended. "
+  "The interim peak is the <b>neckline</b> &mdash; the resistance ceiling between the bottoms. In the "
+  "classic version, you buy when price breaks <i>above</i> the neckline. Quantus uses a sharper "
+  "variation, below.")
 
-h2("2.5 Volume confirmation")
-p("A breakout on thin volume often fizzles. The bot requires the breakout candle's volume to be at "
-  "least a multiple (<font face='Courier'>volume_factor</font>) of the recent average volume. Genuine "
-  "reversals tend to attract participation; the volume gate filters low-conviction breaks.")
-
-h2("2.6 Measuring an edge: R-multiples, expectancy, profit factor, drawdown")
+h2("3.2 The flush-reclaim (a &ldquo;bear trap&rdquo;) &mdash; the actual entry")
+p("Instead of waiting for a breakout above the neckline, Quantus enters <b>below</b> the neckline, on a "
+  "failed breakdown. The sequence:")
 bullets([
-    "<b>R (risk unit):</b> the distance from entry to the protective stop. A trade that gains twice its "
-    "risk is +2R; one that hits the stop is -1R. Expressing results in R makes trades comparable across "
-    "prices and position sizes.",
-    "<b>Expectancy (average R):</b> the mean R per trade &mdash; the average profit (in risk units) you "
-    "expect from each signal. Positive expectancy is the definition of an edge.",
-    "<b>Win rate:</b> the fraction of trades that are profitable. High win rate with small average R is "
-    "common for target-based exits and is not automatically good or bad on its own.",
-    "<b>Profit factor:</b> gross winning R divided by gross losing R. Above 1.0 is profitable; ~1.3 is "
-    "modest, ~2+ is strong.",
-    "<b>Max drawdown:</b> the largest peak-to-trough drop of the cumulative-R equity curve &mdash; a "
-    "measure of the pain an approach inflicts before recovering.",
+    "Price falls into <b>Bottom 1</b> after a prior decline (there must be a downtrend to reverse).",
+    "It <b>recovers</b> up toward an interim peak &mdash; that peak becomes the <b>neckline</b> / target.",
+    "Then comes a <b>steep, high-volume flush</b>: a near-vertical sell-off that <b>undercuts</b> Bottom 1 "
+    "(pokes below the old floor). This is the <b>bear trap</b> &mdash; it looks like a fresh breakdown and "
+    "flushes out nervous sellers.",
+    "Within a few bars a <b>clean bullish candle reclaims</b> back above Bottom 1&rsquo;s low (but still "
+    "below the neckline). That failed breakdown is the signal: sellers had their chance and could not "
+    "hold the lows. <b>That reclaim candle&rsquo;s close is the entry.</b>",
+])
+p("The appeal is buying the reversal <b>cheaply</b> (well below the neckline) right as the trap springs, "
+  "rather than chasing a breakout. The risk is that the &ldquo;trap&rdquo; is a real breakdown &mdash; "
+  "which is what the stop is for.")
+image("anatomy.png", "Figure 2. The flush-reclaim. Price declines to Bottom 1, recovers to the neckline, "
+      "then a steep high-volume flush undercuts Bottom 1 (the bear trap). A clean bullish candle reclaims "
+      "back above Bottom 1 = the entry, below the neckline. The stop sits below the flush; the target is a "
+      "&lsquo;measured move&rsquo; above the neckline.")
+
+h2("3.3 Finding it objectively: swing points and prominence")
+p("To turn this picture into code, the bottoms are found as <b>swing lows</b>: a bar is a swing low if "
+  "its low is the lowest within a symmetric window of <font face='Courier'>swing_k</font> bars on each "
+  "side. <b>Prominence</b> then measures how far the neckline sits above the bottom, as a percentage; "
+  "requiring a minimum (5%) throws away shallow, sideways noise and keeps setups with real depth.")
+
+h2("3.4 Measuring &ldquo;steep&rdquo; and &ldquo;capitulation&rdquo;: ATR and volume")
+p("Two things make the flush a genuine trap rather than a gentle dip. First, <b>steepness</b>, measured "
+  "with the <b>ATR</b> (Average True Range) &mdash; a standard gauge of how much a stock typically moves "
+  "per bar (its volatility). Requiring the drop from the peak to be at least a multiple of ATR (e.g. "
+  "3&times;) means &ldquo;much bigger than a normal move&rdquo; &mdash; a near-vertical plunge. Second, "
+  "<b>volume</b>: the flush bar must trade well above its recent average volume, the fingerprint of "
+  "panic selling (<b>capitulation</b>).")
+
+h2("3.5 The clean reclaim bar (why the candle shape matters)")
+p("The entry candle must be a <b>clean bullish shape</b> so we are not buying a half-hearted bounce. It "
+  "must be green and either (a) a <b>full body</b> that closes near its high, or (b) a <b>hammer</b> with "
+  "a long lower wick &mdash; and in both cases the <b>upper wick must be small</b> (the close lands in "
+  "the top 15% of the bar&rsquo;s range). A green candle that rallied but got <b>sold off</b> into the "
+  "close leaves a long upper wick; Quantus rejects it, because that overhead selling is exactly what a "
+  "reversal entry does not want.")
+
+h2("3.6 Only closed bars (no &ldquo;repainting&rdquo;)")
+p("Quantus acts only on <b>completed</b> candles; the still-forming current bar is ignored, because it "
+  "can change (&ldquo;repaint&rdquo;) before it closes. This discipline is what makes a backtest honest: "
+  "the bot never reacts to information that did not fully exist yet.")
+
+h2("3.7 Keeping score: R-multiples, expectancy, profit factor, drawdown")
+bullets([
+    "<b>R (one unit of risk):</b> the distance from your entry to your stop. If a trade makes twice what "
+    "it risked, that is +2R; hitting the stop is -1R. Measuring in R lets you compare trades across "
+    "different stocks and sizes.",
+    "<b>Expectancy (average R):</b> the mean R per trade &mdash; your average result per signal. Positive "
+    "expectancy is the definition of an edge.",
+    "<b>Win rate:</b> the share of trades that make money. A high win rate with tiny average R is not "
+    "automatically good; the two must be read together.",
+    "<b>Profit factor:</b> total winning R divided by total losing R. Above 1.0 is profitable; ~2+ is strong.",
+    "<b>Max drawdown:</b> the deepest peak-to-trough dip of the running total &mdash; the worst stretch "
+    "you would have had to sit through.",
 ])
 
-h2("2.7 Walk-forward, in-sample vs out-of-sample, and overfitting")
-p("<b>Overfitting</b> (curve-fitting) is tuning parameters until they look perfect on past data, only "
-  "to fail live. Two defenses are built in. <b>Walk-forward</b> testing replays history bar by bar, only "
-  "ever using data that existed at each moment &mdash; no look-ahead. <b>Out-of-sample (OOS)</b> "
-  "validation reserves the most recent slice of history, tunes on the older <b>in-sample</b> portion, "
-  "and checks whether the chosen settings still work on the untouched OOS slice. A setting whose edge "
-  "vanishes out-of-sample was overfit and is discarded.")
+h2("3.8 Not fooling ourselves: walk-forward and out-of-sample")
+p("<b>Overfitting</b> is tuning a strategy until it looks perfect on the past, then watching it fail "
+  "live. Two defenses are built in. <b>Walk-forward</b> testing replays history bar by bar, only ever "
+  "using data that existed at each moment. <b>Out-of-sample</b> testing hides the most recent slice of "
+  "history, tunes on the older part, and then checks whether the choice still works on the hidden slice. "
+  "If an edge vanishes out-of-sample, it was a mirage and is thrown away. (This exact check is what told "
+  "us the original exit rule did not work &mdash; see Section 7.)")
 story.append(PageBreak())
 
-# ============================== 3. ARCHITECTURE ===============================
-h1("3. Backend Architecture")
-p("The system is a set of small, single-responsibility modules connected by a linear data pipeline. "
-  "The same detection code powers the live scanner and the backtester, so what you measure is what you "
-  "trade.")
+# ============================== 4. ARCHITECTURE ===============================
+h1("4. Backend Architecture")
+p("The system is a set of small, single-purpose modules connected in a straight line. The <b>same</b> "
+  "detection code powers both the live scanner and the backtester, so what we measure is what we trade.")
 
-h2("3.1 Data-flow pipeline (daily scan)")
+h2("4.1 Data-flow pipeline (the daily scan)")
 code(
-    "hermes cron (17:00)\n"
+    "scheduled daily scan\n"
     "      |\n"
     "      v\n"
-    "  ddbot.run  ->  YahooDataProvider          (fetch closed OHLCV bars)\n"
+    "  ddbot.run  ->  YahooDataProvider          (fetch completed OHLCV bars)\n"
     "      |            |\n"
     "      |            v\n"
-    "      |         detect()                     (swings -> candidate W's -> neckline\n"
-    "      |            |                          + prominence + prior-downtrend)\n"
+    "      |         detect()                     (swing lows -> recovery/neckline ->\n"
+    "      |            |                          steep undercut flush = candidate)\n"
     "      |            v\n"
     "      |         dedupe_by_neckline()         (one setup per resistance level)\n"
     "      |            |\n"
     "      |            v\n"
-    "      |         PatternStore (SQLite)        (persist pending patterns; dedup/idempotency)\n"
+    "      |         PatternStore (SQLite)        (remember pending setups between runs)\n"
     "      |            |\n"
     "      |            v\n"
-    "      |         check_confirmation()         (breakout + green + volume, closed bars only)\n"
-    "      |            |\n"
+    "      |         check_confirmation()         (clean reclaim below neckline? -> set\n"
+    "      |            |                          entry + ATR stop + measured target)\n"
     "      |            v\n"
-    "      |         render chart (mplfinance) -> CompositeAlerter -> Telegram + Discord\n"
+    "      |         multi-timeframe gate -> chart -> Telegram + Discord\n"
     "      v\n"
-    "   exit (idempotent: a confirmed setup is alerted exactly once)"
+    "   exit (idempotent: each confirmed setup is alerted exactly once)"
 )
 
-h2("3.2 Module map")
+h2("4.2 Module map")
 table([
     ["Module", "Responsibility"],
-    ["data/yahoo.py", "Fetch OHLCV from Yahoo; drop the forming bar; symbol validation/normalization."],
-    ["patterns/swings.py", "Swing-high / swing-low (fractal) detection."],
-    ["patterns/double_bottom.py", "detect(), dedupe_by_neckline(), check_confirmation() (incl. volume gate)."],
-    ["patterns/base.py", "DoubleBottom data model, PatternState, stable pattern_id, stop reference."],
-    ["state/store.py", "SQLite: patterns, watchlist, key/value (Telegram offset). WAL for shared access."],
-    ["alerts/*", "Telegram, Discord, composite fan-out, message formatter."],
-    ["charts/chart.py", "Annotated candlestick PNG (bottoms, neckline, breakout) via mplfinance."],
-    ["engine.py", "Orchestrates fetch -> detect -> persist -> confirm -> alert per ticker/timeframe."],
-    ["run.py", "CLI entry for the daily scan; loads .env and config."],
-    ["sync.py / listen.py", "Telegram watchlist control: one-shot poll and always-on long-poll listener."],
-    ["watchlist.py", "Deterministic add/remove/list CLI (also used by hermes/qwen)."],
+    ["data/yahoo.py", "Fetch price history from Yahoo; drop the still-forming bar; validate symbols."],
+    ["patterns/swings.py", "Swing-low / swing-high (fractal) detection."],
+    ["patterns/double_bottom.py", "detect(); dedupe_by_neckline(); check_confirmation(); compute_stop()/compute_target()."],
+    ["patterns/base.py", "The DoubleBottom record (entry, stop, target), states, stable id."],
+    ["state/store.py", "SQLite: setups (incl. stop/target), watchlist, key/value. Migrates old DBs."],
+    ["risk.py", "Position sizing: how many shares to risk a fixed % of the account."],
+    ["mtf.py", "Multi-timeframe filter (only take a daily signal if the weekly trend agrees)."],
+    ["alerts/*", "Telegram, Discord, fan-out, and the message formatter."],
+    ["charts/chart.py", "The labelled candlestick PNG attached to each alert (mplfinance)."],
+    ["engine.py", "Runs fetch -> detect -> remember -> confirm -> alert per ticker/timeframe."],
+    ["journal.py", "Replays past alerts against later prices to score how they actually did."],
     ["backtest/*", "Walk-forward engine, metrics, parameter sweep, CLI."],
 ], col_widths=[5.2 * cm, 10.3 * cm])
 
-h2("3.3 State and idempotency")
-p("All state lives in one SQLite file. Detected patterns are stored with a stable "
-  "<font face='Courier'>pattern_id</font> = hash(ticker, timeframe, bottom dates). Confirmation often "
-  "arrives on a later run, so patterns persist between runs; an <font face='Courier'>alerted</font> flag "
-  "guarantees each setup fires exactly once. This makes every scheduled run safe to repeat.")
+h2("4.3 Memory and &ldquo;idempotency&rdquo;")
+p("All state lives in one SQLite file. Each setup gets a stable id (a hash of the ticker, timeframe, and "
+  "the two bottom dates). Because a setup often confirms on a <i>later</i> day, setups persist between "
+  "runs; an <font face='Courier'>alerted</font> flag guarantees each one fires <b>exactly once</b>. That "
+  "makes every scheduled run safe to repeat &mdash; &ldquo;idempotent.&rdquo; When the exit model was "
+  "added, the database automatically gained two new columns (the stop and target prices) via a small "
+  "migration, so existing data keeps working.")
 story.append(PageBreak())
 
-# ============================== 4. DETECTION ==================================
-h1("4. The Detection Algorithm, Step by Step")
-p("Given a frame of closed OHLCV bars for one ticker and timeframe:")
+# ============================== 5. DETECTION ==================================
+h1("5. The Detection Algorithm, Step by Step")
+p("Given a set of completed price bars for one ticker and timeframe:")
 bullets([
-    "<b>1. Swing lows:</b> mark every bar whose low is the minimum over +/- <font face='Courier'>swing_k</font> bars.",
-    "<b>2. Candidate pairs:</b> for each pair of swing lows (B1 before B2), require their spacing to be "
-    "within [min_bars_between, max_bars_between] and their lows within <font face='Courier'>bottom_tol_pct</font> of each other.",
-    "<b>3. Neckline:</b> take the highest high strictly between the two bottoms; require its prominence "
-    "above the bottoms to be at least <font face='Courier'>min_prominence_pct</font>.",
-    "<b>4. Prior downtrend (optional):</b> require price to have declined into B1 &mdash; a reversal needs "
-    "something to reverse.",
-    "<b>5. Dedup:</b> cluster candidates whose necklines sit within ~2% and keep only the strongest "
-    "(deepest, most symmetric), so one breakout is one setup, not many.",
-    "<b>6. Persist:</b> store surviving structures as DETECTED (pending).",
-    "<b>7. Confirm:</b> the first later closed candle that closes above neckline x (1 + buffer), is green, "
-    "and carries volume >= factor x average -> CONFIRMED (alert). A close below the lower bottom, or "
-    "expiry after max_bars_between, invalidates the pending pattern.",
+    "<b>1. First bottom (B1):</b> find a swing low, and require a <b>prior downtrend</b> into it.",
+    "<b>2. Recovery / neckline:</b> require a bounce to an interim peak at least "
+    "<font face='Courier'>min_prominence_pct</font> above B1. That peak is the neckline (and the target).",
+    "<b>3. Steep flush (B2):</b> a near-vertical drop that <b>undercuts B1&rsquo;s low</b> within "
+    "<font face='Courier'>flush_max_bars</font>, where the fall is at least "
+    "<font face='Courier'>flush_atr_mult</font>&times;ATR <b>and</b> the flush bar&rsquo;s volume is well "
+    "above its recent average (capitulation).",
+    "<b>4. Dedup:</b> collapse near-identical necklines so one trap is one setup.",
+    "<b>5. Remember:</b> store the surviving structures as pending.",
+    "<b>6. Reclaim = entry:</b> within <font face='Courier'>reclaim_window</font> bars, the first "
+    "<b>clean bullish candle</b> (full green or hammer, small upper wick) that closes above B1&rsquo;s "
+    "low but below the neckline confirms the setup. The entry is that close; the <b>stop</b> and "
+    "<b>target</b> are computed here (Section 3.4&ndash;3.5 and 7).",
+    "<b>Invalidation:</b> a close back below the flush low, a reclaim that overshoots above the neckline "
+    "(that&rsquo;s a plain breakout, not our below-neckline entry), or the reclaim window elapsing.",
 ])
-image("detection_real.png", "Figure 2. A real double bottom the bot detected on AAPL (daily). The two "
-      "blue markers are the bottoms, the dashed orange line is the neckline, and the green line marks "
-      "the confirming bullish breakout candle. This is the exact chart image attached to the alert.")
-h2("4.1 Tunable thresholds (config/config.yaml)")
+image("detection_real.png", "Figure 3. A real flush-reclaim Quantus detected (FOXA, weekly). The blue "
+      "markers are the two bottoms (the second undercutting the first), the dashed orange line is the "
+      "neckline, and the star marks the confirming reclaim candle. This is the exact image attached to "
+      "the alert.")
+h2("5.1 Tunable thresholds (config/config.yaml)")
+p("Everything is a named knob in one config file, so the strategy can be tuned without touching code.")
 table([
     ["Parameter", "Default", "Meaning"],
-    ["lookback_bars", "90", "Detection window scanned per ticker."],
-    ["swing_k", "3", "Bars each side required to qualify a swing point."],
-    ["bottom_tol_pct", "0.03", "Max relative gap between the two bottom lows (3%)."],
-    ["min_prominence_pct", "0.05", "Neckline must sit >= 5% above the bottoms."],
-    ["min_bars_between", "5", "Bottoms not too close."],
-    ["max_bars_between", "50", "Bottoms not too far; also pending-pattern expiry."],
-    ["neckline_buffer_pct", "0.001", "Breakout must clear the neckline by 0.1% (noise guard)."],
-    ["require_prior_downtrend", "true", "Require a decline into Bottom 1."],
-    ["require_volume_confirmation", "true", "Enforce the breakout volume gate."],
-    ["volume_avg_window", "20", "Bars used for the average-volume baseline."],
-    ["volume_factor", "1.0", "Breakout volume >= this x average (raise ~1.5 for stricter)."],
-], col_widths=[5.0 * cm, 2.2 * cm, 8.3 * cm])
-p("A note on tooling: chart patterns like the double bottom are <b>not</b> provided by TA-Lib or "
-  "pandas-ta (those cover indicators and single-candle patterns). The structural detection here is "
-  "custom logic built on NumPy/pandas.")
+    ["lookback_bars", "90", "How many recent bars are scanned per ticker."],
+    ["swing_k", "3", "Bars each side needed to qualify a swing low."],
+    ["min_prominence_pct", "0.05", "Neckline must sit >= 5% above Bottom 1 (real depth)."],
+    ["max_bars_between", "50", "Max bars from Bottom 1 to the flush."],
+    ["require_undercut", "true", "The flush must poke BELOW Bottom 1's low (the trap)."],
+    ["flush_atr_mult", "3.0", "Peak->flush drop must be >= 3x ATR (a near-vertical plunge)."],
+    ["flush_atr_window", "14", "Bars used to measure ATR (typical move size)."],
+    ["flush_max_bars", "3", "The flush must happen within this many bars."],
+    ["flush_volume_factor", "1.5", "Flush-bar volume >= 1.5x its recent average (capitulation)."],
+    ["reclaim_window", "4", "The reclaim must occur within this many bars of the flush."],
+    ["reclaim_min_body_frac", "0.60", "Full green bar: body >= 60% of the bar's range."],
+    ["reclaim_max_upper_wick_frac", "0.15", "Upper wick <= 15% of range (no 'long head')."],
+    ["reclaim_min_lower_wick_frac", "0.50", "Hammer: lower wick >= 50% of range."],
+    ["stop_mode / stop_atr_mult", "atr / 3.5", "Stop = entry - 3.5x ATR (see Section 7)."],
+    ["target_mode", "measured_move", "Target = neckline + (neckline - stop)."],
+], col_widths=[5.6 * cm, 2.6 * cm, 7.3 * cm])
+p("A note on tooling: multi-bar chart patterns like this are <b>not</b> provided by off-the-shelf "
+  "libraries such as TA-Lib (which cover indicators and single-candle patterns). The structural "
+  "detection here is custom logic built on NumPy and pandas.")
 story.append(PageBreak())
 
-# ============================== 5. DELIVERY ===================================
-h1("5. Alerting, Charts, Interaction &amp; Scheduling")
+# ============================== 6. DELIVERY ===================================
+h1("6. Alerts, Charts, Interaction &amp; Scheduling")
 
-h2("5.1 Alerts and charts")
-p("On confirmation the bot renders an annotated candlestick chart (mplfinance): the two bottoms marked, "
-  "the neckline drawn, and the green breakout candle highlighted, with a volume panel. A composite "
-  "alerter fans the message + chart out to Telegram (sendPhoto) and Discord (webhook file upload); a "
-  "failure on one channel never blocks the other. Each alert includes the neckline, both bottoms, the "
-  "breakout close, and a suggested stop reference below the bottoms.")
+h2("6.1 What an alert looks like")
+p("On confirmation the bot renders a labelled candlestick chart (the two bottoms, the neckline, and the "
+  "reclaim candle marked) and sends it, with the message, to Telegram and Discord at once; a failure on "
+  "one channel never blocks the other. The message states the entry (reclaim close), the neckline, the "
+  "<b>target</b> and <b>stop</b>, the <b>reward-to-risk</b> ratio, and a <b>suggested position size</b> "
+  "(how many shares to risk a fixed 1% of a configured account). A footnote reminds you it is a "
+  "discretionary setup to review by eye.")
 
-h2("5.2 Interactive watchlist (Telegram)")
-p("The watchlist lives in SQLite and is editable from Telegram via a fixed two-button keyboard "
-  "([+ Add] / [- Remove]) and the commands /list, /add SYMBOL, /remove SYMBOL. New symbols are "
-  "validated against Yahoo before being added, and only the owner's chat id is honored. Because Telegram "
-  "cannot wake a stopped program, an <b>always-on long-polling listener</b> (kept alive by launchd, "
-  "auto-restart on crash and boot) provides instant responses. A one-shot polling variant also exists "
-  "for cron-based operation; only one may poll a bot token at a time.")
+h2("6.2 Multi-timeframe agreement")
+p("A daily signal is stronger when the bigger picture agrees. With the multi-timeframe filter on, a "
+  "<b>daily</b> alert only fires if the <b>weekly</b> trend is up (weekly close above its moving "
+  "average). Weekly signals are not gated &mdash; they are the higher timeframe.")
 
-h2("5.3 Scheduling (hermes) and a macOS gotcha")
-p("The daily scan is a one-shot invoked by the hermes cron scheduler at 17:00 local time (Malaysia). "
-  "Because the bot only acts on closed bars, exact timing is not critical. One practical lesson learned: "
-  "macOS privacy protection (TCC) blocks launchd agents from executing shell scripts located in "
-  "~/Desktop; the fix is to have launchd run the Python interpreter directly (mirroring an existing "
-  "working service) rather than a wrapper script.")
+h2("6.3 Editing the watchlist from Telegram")
+p("The watchlist lives in the database and is editable from your phone via two buttons "
+  "([+ Add] / [- Remove]) and the commands /list, /add SYMBOL, /remove SYMBOL. New symbols are checked "
+  "against Yahoo before being added, and only your own chat is allowed to make changes. Because Telegram "
+  "cannot wake a stopped program, a small always-on listener (auto-restarting) makes the buttons respond "
+  "instantly.")
+
+h2("6.4 Scheduling and a macOS lesson")
+p("The daily scan runs once a day, automatically. Because the bot only acts on completed bars, the exact "
+  "minute does not matter. One practical lesson: macOS privacy protection blocks scheduled agents from "
+  "running scripts kept in the Desktop folder; the fix was to move the project out of Desktop and run "
+  "the Python interpreter directly.")
 story.append(PageBreak())
 
-# ============================== 6. BACKTESTING ================================
-h1("6. Backtesting &amp; Tuning")
+# ============================== 7. BACKTESTING ================================
+h1("7. Does It Actually Work? Backtesting &amp; the Exit Study")
 
-h2("6.1 Methodology")
-p("The backtester replays history through the <b>exact same</b> detect() and check_confirmation() code "
-  "the live bot uses, walking forward bar by bar so there is no look-ahead. The first bar a pattern "
-  "confirms is the entry. Each trade is then simulated forward:")
+h2("7.1 How the backtest works")
+p("The backtester replays history through the <b>exact same</b> detection code the live bot uses, "
+  "walking forward bar by bar so it never peeks at the future. The first bar a setup reclaims is the "
+  "entry; the trade is then followed until it hits its stop (a loss) or its target (a win), or times "
+  "out. Every result is recorded in R (Section 3.7). Caveats: the model ignores trading costs, slippage, "
+  "and dividends, and takes one position per signal &mdash; so results are indicative, not a promise.")
+image("trade.png", "Figure 4. One backtested trade. Entry at the reclaim close, an ATR-based stop below, "
+      "and a measured-move target above; the star marks the exit. The outcome is recorded in R (reward "
+      "relative to the risk taken).")
+
+h2("7.2 The key finding: the exit was the problem")
+p("The first version of the strategy stopped out just below the deep flush and aimed only at the "
+  "neckline. Backtesting showed the entry was fine (~60% of trades were winners) but the strategy still "
+  "<b>lost money out-of-sample</b>: the stop was so far away that the few losses outweighed the many "
+  "small wins. So a dedicated <b>exit-model study</b> swept different stop and target rules across ~36 "
+  "volatile stocks over ~8 years, splitting every result into in-sample and out-of-sample.")
+table([
+    ["Stop &rarr; Target", "In-sample", "Out-of-sample", "Verdict"],
+    ["ATR (3.5x) &rarr; measured move", "+0.62 R,  PF 2.8", "+0.71 R,  PF 4.5", "Holds out-of-sample"],
+    ["ATR (3.5x) &rarr; 2R target", "+0.53 R,  PF 2.4", "+0.87 R,  PF 5.3", "Holds out-of-sample"],
+    ["Flush low &rarr; neckline (original)", "+0.04 R,  PF 1.1", "-0.19 R,  PF 0.6", "Fails (negative OOS)"],
+    ["Reclaim-bar low (tight) &rarr; any", "negative", "negative", "Worst (whipsawed out)"],
+], col_widths=[6.4 * cm, 3.3 * cm, 3.3 * cm, 2.5 * cm])
+p("The lesson: a <b>wider, volatility-scaled ATR stop</b> (giving the trade room) with a <b>measured-move "
+  "target</b> turns a losing exit into one that stays profitable out-of-sample &mdash; positive with a "
+  "profit factor above 2 in <i>both</i> samples, the signature of a real (not curve-fit) effect. A very "
+  "tight stop was the worst: it got shaken out by normal wobble. That ATR/measured-move exit is now the "
+  "live default. <b>Honest caveat:</b> the setup is rare, so this rests on only ~16 out-of-sample trades "
+  "&mdash; promising, not proof. That is exactly why Quantus stays a discretionary finder.")
+image("exit_study.png", "Figure 5. Profit factor for every stop-model (rows) x target-model (columns) "
+      "combination, in-sample (left) vs out-of-sample (right); greener is better. The ATR-stop rows stay "
+      "green in both panels; the tight reclaim-bar stop is red; the original flush-low/neckline corner "
+      "fades. Only settings green in BOTH panels are trustworthy.")
+image("equity.png", "Figure 6. The running total (in R) of the backtested trades across the volatile "
+      "universe, in date order. The shaded band is drawdown &mdash; how far below its prior peak the "
+      "running total sat at each point.")
+story.append(PageBreak())
+
+# ============================== 8. TIMELINE ===================================
+h1("8. How the Project Evolved")
+p("Quantus was built and revised incrementally, each step verified with tests and live runs. The most "
+  "important changes were driven by evidence, not opinion.")
+table([
+    ["Stage", "What changed"],
+    ["MVP", "Daily double-bottom detect + confirm; Telegram + Discord alerts; SQLite memory; idempotent daily run."],
+    ["Expansion", "Weekly timeframe; labelled chart images; automatic scheduling; watchlist in the database."],
+    ["Telegram control", "Buttons + commands to edit the watchlist; an always-on listener for instant replies."],
+    ["Quality filters", "One-alert-per-setup dedup; volume confirmation; multi-timeframe agreement."],
+    ["Backtesting", "Walk-forward engine, metrics, and a parameter sweep with an out-of-sample guard."],
+    ["Risk + journal", "Suggested position size on every alert; a journal that scores how past alerts played out."],
+    ["Strategy pivot", "Replaced the breakout entry with the flush-reclaim (bear-trap) entry below the neckline."],
+    ["Cleaner entries", "Required the reclaim candle to be a clean bullish shape (full green / hammer, small upper wick)."],
+    ["Exit-model study", "Found the flush-low/neckline exit was negative out-of-sample; adopted an ATR stop + measured-move target that holds up."],
+    ["This document", "Rewritten to explain the current strategy from scratch."],
+], col_widths=[3.6 * cm, 11.9 * cm])
+
+# ============================== 9. RISKS ======================================
+h1("9. Risks &amp; Limitations")
 bullets([
-    "<b>Entry:</b> the breakout candle's close.",
-    "<b>Stop:</b> just below the lower of the two bottoms; risk = entry - stop.",
-    "<b>Target (default):</b> the 'measured move' &mdash; neckline + (neckline - stop), i.e. the pattern "
-    "height projected up. (A fixed reward:risk target is also available.)",
-    "<b>Exit:</b> whichever of stop or target is hit first (stop assumed first if both hit in one bar, "
-    "conservative), else a time-exit after max_hold_bars.",
-])
-p("Results are reported in R and aggregated into win rate, expectancy, total R, profit factor, and max "
-  "drawdown, per ticker and overall. Caveats: the model ignores slippage, commissions and dividends, "
-  "assumes one position per signal, and applies no position sizing &mdash; results are indicative, not "
-  "guarantees.")
-image("trade.png", "Figure 3. One backtested AAPL trade: entry at the breakout close, stop below the "
-      "bottoms, and the measured-move target. The star marks the exit; the result is recorded in R "
-      "(reward relative to the risk taken).")
-
-h2("6.2 Measured results (Magnificent 7)")
-table([
-    ["Timeframe", "Period", "Trades", "Win %", "Profit factor", "Expectancy"],
-    ["Daily", "2022-2026 (~4y)", "157", "68%", "1.27", "+0.08 R"],
-    ["Weekly", "2015-2026 (~11y)", "69", "70%", "1.47", "+0.13 R"],
-], col_widths=[2.6 * cm, 4.0 * cm, 2.0 * cm, 1.8 * cm, 2.9 * cm, 2.2 * cm])
-p("A real but modest positive edge, with the weekly timeframe cleaner than daily &mdash; consistent with "
-  "the principle that higher timeframes carry less noise.")
-image("equity.png", "Figure 4. Cumulative-R equity curve across the Mag7 daily backtest (trades in "
-      "chronological order). The shaded band is drawdown &mdash; how far the running total sits below "
-      "its prior peak.")
-
-h2("6.3 Parameter sweep with out-of-sample guard")
-p("The sweep grid-searches detection thresholds, backtests each combination, and splits the trades into "
-  "in-sample (older) and out-of-sample (newest 30%) by entry date. It ranks by an in-sample objective "
-  "while displaying out-of-sample side by side, so overfit settings are exposed. Example daily result:")
-table([
-    ["volume_factor", "min_prominence", "IS profit factor", "OOS profit factor", "Verdict"],
-    ["2.0", "0.08", "3.86", "0.71", "Overfit (OOS collapses)"],
-    ["2.0", "0.05", "3.71", "3.01", "Holds out-of-sample"],
-    ["1.5", "0.05", "1.50", "2.17", "Holds"],
-    ["1.0", "0.05 (current)", "1.27", "1.28", "Stable, weakest edge"],
-], col_widths=[2.7 * cm, 3.1 * cm, 3.1 * cm, 3.3 * cm, 3.3 * cm])
-p("The lesson the tool teaches: the best in-sample number (2.0/0.08) is a trap, but a broad plateau "
-  "(volume_factor 1.5-2.0 with min_prominence 0.05) improves the edge and survives out-of-sample. A "
-  "sweep finds candidates; it does not prove an edge.")
-image("sweep_heatmap.png", "Figure 5. Profit factor across a volume_factor x min_prominence grid, "
-      "in-sample (left) vs out-of-sample (right); greener is better. The volume_factor=2.0 column looks "
-      "superb in-sample, but the top cell (2.0 / 0.08) turns red out-of-sample &mdash; overfit. The "
-      "settings that stay green in BOTH panels are the trustworthy ones.")
-story.append(PageBreak())
-
-# ============================== 7. TIMELINE ===================================
-h1("7. Development Timeline")
-p("The project was built incrementally, each step verified with tests and live runs before the next.")
-table([
-    ["Phase", "What was built"],
-    ["1. MVP", "Daily double-bottom detect + confirm; Telegram + Discord alerts; SQLite state; idempotent daily run."],
-    ["1b. Expansion", "Magnificent-7 watchlist; daily + weekly timeframes; annotated chart images in alerts."],
-    ["Scheduling", "hermes cron for the daily scan; .env secret loading; timezone-correct timing."],
-    ["1.5 Watchlist UX", "Watchlist moved into SQLite; Telegram commands + buttons; deterministic CLI for hermes/qwen."],
-    ["Listener", "Always-on long-polling listener (launchd) for instant Telegram interaction."],
-    ["Quality: dedup", "Per-neckline dedup: collapsed ~26 backlog alerts to ~14 (one per setup)."],
-    ["Quality: volume", "Volume-confirmation gate on the breakout candle."],
-    ["Backtesting", "Walk-forward engine + metrics + CLI; measured the edge on 4-11 years of history."],
-    ["Parameter sweep", "Grid search with in-sample/out-of-sample validation to tune thresholds safely."],
-    ["Documentation", "This design document."],
-], col_widths=[3.4 * cm, 12.1 * cm])
-
-# ============================== 8. RISKS ======================================
-h1("8. Risks &amp; Limitations")
-bullets([
-    "<b>False positives are inherent</b> to pattern detection; the prominence, similarity, dedup and "
-    "volume filters mitigate but never eliminate them.",
-    "<b>Data quality:</b> yfinance is an unofficial, free feed with no SLA; it can be delayed, gap, or "
-    "change. Prices are split/dividend-adjusted.",
-    "<b>Modelling gaps:</b> the backtest ignores slippage, commissions, dividends and position sizing; "
-    "live results will differ.",
-    "<b>Overfitting risk</b> when tuning; always prefer settings that hold out-of-sample.",
-    "<b>Not financial advice / not automated execution:</b> Quantus alerts; a human decides. Manual "
-    "confirmation before trading is intentional, given the probabilistic nature of the signals.",
+    "<b>No <i>proven</i> mechanical edge yet.</b> The improved exit looks good but rests on a small "
+    "out-of-sample sample. Treat every alert as a candidate to review, not a signal to trade blindly.",
+    "<b>False positives are inherent</b> to pattern detection; the prominence, steep-flush, volume and "
+    "clean-reclaim filters reduce them but never eliminate them.",
+    "<b>Data quality:</b> Yahoo Finance is a free, unofficial feed with no guarantees; it can be delayed, "
+    "gap, or be revised. Prices are split/dividend-adjusted.",
+    "<b>Modelling gaps:</b> the backtest ignores trading costs, slippage and dividends, and uses one "
+    "position per signal &mdash; live results will differ.",
+    "<b>Overfitting risk</b> whenever thresholds are tuned; always prefer settings that survive "
+    "out-of-sample.",
+    "<b>Not financial advice, and not automated:</b> Quantus alerts; a human decides and executes.",
 ])
 
-# ============================== 9. ROADMAP ====================================
-h1("9. Roadmap")
+# ============================== 10. ROADMAP ===================================
+h1("10. Roadmap")
 bullets([
-    "<b>Apply tuned thresholds</b> from the sweep (e.g. volume_factor 1.5) for higher-quality alerts.",
-    "<b>Risk management &amp; position sizing:</b> convert R-multiples into dollar equity curves and a "
-    "suggested size per alert (ATR or fixed-fractional).",
+    "<b>Validate live:</b> let the journal accumulate real forward signals under the new exit and confirm "
+    "the edge holds outside the backtest &mdash; the single most valuable next step.",
     "<b>More patterns:</b> inverse head-and-shoulders, triple bottom &mdash; reusing the swing/neckline "
     "machinery.",
-    "<b>Multi-timeframe confirmation:</b> only alert a daily setup when a weekly setup aligns.",
-    "<b>Fundamental overlay</b> and, much later, semi-/fully-automated execution with hard guardrails.",
+    "<b>Observability:</b> a weekly performance digest and light health monitoring of the scan and listener.",
+    "<b>Later:</b> a fundamental overlay, and &mdash; only with hard guardrails &mdash; semi-automated execution.",
 ])
 
 spacer(10)
 p("<i>Quantus &mdash; technical design document. Generated programmatically from "
-  "docs/generate_pdf.py; regenerate to keep in sync with the codebase.</i>")
+  "docs/generate_pdf.py; regenerate to keep it in sync with the codebase.</i>")
 
 
 def build():
