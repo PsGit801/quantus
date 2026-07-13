@@ -70,6 +70,16 @@ def test_rejects_reclaim_bar_with_long_upper_wick():
     assert check_confirmation(p, df, TEST_CFG).state is PatternState.INVALIDATED
 
 
+def test_rejects_full_body_with_moderate_upper_wick():
+    # A full green body that still sells off ~20% of its range from the high is too "long-headed"
+    # under the tightened cap (<= 15%) -> no entry, even though body and greenness are fine.
+    highs, lows, opens, closes = list(_HIGH), list(_LOW), list(_OPEN), list(_CLOSE)
+    opens[17], closes[17], highs[17], lows[17] = 95.0, 103.0, 105.0, 95.0  # upper wick 2/10 = 0.20
+    df = make_ohlcv(lows, highs, closes, opens, _VOL)
+    p = detect(df, "T", "1d", TEST_CFG)[0]
+    assert check_confirmation(p, df, TEST_CFG).state is PatternState.INVALIDATED
+
+
 def test_rejects_weak_indecision_reclaim_bar():
     # Small green body, balanced small wicks: neither a full body nor a hammer -> no entry.
     highs, lows, opens, closes = list(_HIGH), list(_LOW), list(_OPEN), list(_CLOSE)

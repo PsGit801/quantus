@@ -41,7 +41,7 @@ detection:
   reclaim_window: 4          # bullish close > B1 low within this many bars of B2 = entry
   # The reclaim bar must be a clean bullish candle (fractions are of the bar's range H-L):
   reclaim_min_body_frac: 0.60        # full green bar: body >= 60% of range
-  reclaim_max_upper_wick_frac: 0.25  # both shapes: upper wick <= 25% of range (no "long head")
+  reclaim_max_upper_wick_frac: 0.15  # both shapes: upper wick <= 15% of range (no "long head")
   reclaim_min_lower_wick_frac: 0.50  # bullish pin bar / hammer: lower wick >= 50% of range
 
 # Multi-timeframe confirmation: only fire a daily alert when the weekly trend agrees

@@ -21,6 +21,10 @@ TEST_CFG = DetectionConfig(
     flush_volume_factor=1.5,
     flush_volume_window=5,
     reclaim_window=4,
+    # Pin the clean-reclaim-bar thresholds so tests are decoupled from config-default drift.
+    reclaim_min_body_frac=0.60,
+    reclaim_max_upper_wick_frac=0.15,
+    reclaim_min_lower_wick_frac=0.50,
 )
 
 # A flush-reclaim: decline into B1 (idx5, low 100), recover to a peak (idx12, high 114),
