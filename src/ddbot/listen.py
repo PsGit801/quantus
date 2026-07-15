@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import logging
 import time
+from datetime import datetime
 
 from .config import Secrets, load_config
 from .run import _load_dotenv
@@ -59,6 +60,9 @@ def main(argv: list[str] | None = None) -> int:
             log.warning("getUpdates error: %s; retrying in 3s", exc)
             time.sleep(3)
             continue
+
+        # Heartbeat: the listener is alive and polling (read by the digest's health check).
+        store.kv_set("last_listen_at", datetime.now().isoformat(timespec="seconds"))
 
         for u in updates:
             try:

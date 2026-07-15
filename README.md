@@ -234,6 +234,24 @@ live win-rate / avg R / profit factor next to the backtest reference. Open posit
 `--since` to exclude the seeded historical baseline and focus on genuine forward signals. Small live
 samples aren't conclusive — this is for tracking, not proof.
 
+## Weekly digest & health
+
+A scheduled digest pushes a compact summary to Telegram/Discord so live validation happens on its
+own — no manual runs:
+
+```bash
+./scripts/digest.sh --dry-run     # print instead of send
+./scripts/digest.sh --days 7      # summarise the last 7 days (default), then send
+```
+
+It reuses the journal to report, over the window, how alerts played out (resolved win % / avg R /
+profit factor and open positions' unrealized R) next to the backtest reference. It also prints a
+**health line**: the daily scan and the listener each write a heartbeat (`last_scan_at` /
+`last_listen_at`) — a real scan on every run (dry-runs don't), the listener on every poll cycle — and
+the digest flags a ⚠️ warning if either goes stale (e.g. "scan 3d stale"), so a silently-dead pipeline
+is visible. A fatal failure of the daily scan also sends a one-line alert immediately. Schedule
+`scripts/digest.sh` on a weekly cron (e.g. Sunday), keeping the daily scan cron.
+
 ## Risks & limitations
 
 - **No validated mechanical edge** — the setup breaks even out-of-sample (see Backtesting); treat

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 
 from .alerts.base import Alerter
 from .alerts.formatter import format_signal
@@ -47,6 +48,10 @@ class Engine:
                     alerts += self._process(ticker, timeframe)
                 except Exception as exc:  # isolate per-(ticker, timeframe) failures
                     log.exception("error processing %s %s: %s", ticker, timeframe, exc)
+        # Heartbeat: record that a real scan completed (read by the weekly digest's health
+        # check). Skipped in dry-run so a preview never looks like a live scan.
+        if not self.dry_run:
+            self.store.kv_set("last_scan_at", date.today().isoformat())
         return alerts
 
     def _process(self, ticker: str, timeframe: str) -> int:

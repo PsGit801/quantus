@@ -70,6 +70,14 @@ def main(argv: list[str] | None = None) -> int:
     engine = Engine(cfg, provider, store, alerter, dry_run=args.dry_run)
     try:
         fired = engine.run()
+    except Exception as exc:
+        # A fatal (whole-run) failure would otherwise be silent — make it visible.
+        if alerter is not None:
+            try:
+                alerter.send(f"⚠️ Quantus daily scan failed: {type(exc).__name__}: {exc}")
+            except Exception:  # never let the failure-notifier mask the original error
+                pass
+        raise
     finally:
         store.close()
 

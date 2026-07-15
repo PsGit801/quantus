@@ -1,4 +1,5 @@
 import os
+from datetime import date
 
 import pandas as pd
 from _synthetic import TEST_CFG, confirmed_w
@@ -76,6 +77,23 @@ def test_confirmation_fires_one_alert_and_is_idempotent(tmp_path):
     assert engine.run() == 0
     assert len(alerter.messages) == 1
 
+    store.close()
+
+
+def test_run_writes_scan_heartbeat_but_dry_run_does_not(tmp_path):
+    # A real run records last_scan_at (read by the digest's health check); a dry-run must not.
+    (tmp_path / "dry").mkdir()
+    (tmp_path / "live").mkdir()
+
+    dry_engine, dry_store = _engine(tmp_path / "dry", CountingAlerter())
+    dry_engine.dry_run = True
+    dry_engine.run()
+    assert dry_store.kv_get("last_scan_at") is None
+    dry_store.close()
+
+    engine, store = _engine(tmp_path / "live", CountingAlerter())
+    engine.run()
+    assert store.kv_get("last_scan_at") == date.today().isoformat()
     store.close()
 
 

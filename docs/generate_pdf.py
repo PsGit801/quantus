@@ -124,7 +124,7 @@ story.append(Spacer(1, 0.3 * cm))
 story.append(Paragraph("A Double-Bottom &ldquo;Flush-Reclaim&rdquo; Chart-Pattern Scanner &amp; Alert Bot", SUB))
 story.append(Paragraph("Design, Backend Architecture &amp; Trading Concepts &mdash; explained from scratch", SUB))
 story.append(Spacer(1, 1.2 * cm))
-story.append(Paragraph("Technical Design Document &mdash; generated 2026-07-13", CENTER))
+story.append(Paragraph("Technical Design Document &mdash; generated 2026-07-15", CENTER))
 story.append(Spacer(1, 1.5 * cm))
 story.append(Paragraph(
     "Quantus watches a list of stocks on the daily and weekly timeframes and looks for one specific "
@@ -465,6 +465,7 @@ table([
     ["Strategy pivot", "Replaced the breakout entry with the flush-reclaim (bear-trap) entry below the neckline."],
     ["Cleaner entries", "Required the reclaim candle to be a clean bullish shape (full green / hammer, small upper wick)."],
     ["Exit-model study", "Found the flush-low/neckline exit was negative out-of-sample; adopted an ATR stop + measured-move target that holds up."],
+    ["Digest + health", "Weekly digest of live results, pushed to Telegram/Discord; scan/listener heartbeats warn on silent failure."],
     ["This document", "Rewritten to explain the current strategy from scratch."],
 ], col_widths=[3.6 * cm, 11.9 * cm])
 
@@ -491,7 +492,8 @@ bullets([
     "the edge holds outside the backtest &mdash; the single most valuable next step.",
     "<b>More patterns:</b> inverse head-and-shoulders, triple bottom &mdash; reusing the swing/neckline "
     "machinery.",
-    "<b>Observability:</b> a weekly performance digest and light health monitoring of the scan and listener.",
+    "<b>Observability (in place):</b> a weekly digest of live results plus scan/listener heartbeats now "
+    "ship; extend with a small dashboard and longer-horizon reporting.",
     "<b>Later:</b> a fundamental overlay, and &mdash; only with hard guardrails &mdash; semi-automated execution.",
 ])
 
