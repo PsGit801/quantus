@@ -124,7 +124,7 @@ story.append(Spacer(1, 0.3 * cm))
 story.append(Paragraph("A Double-Bottom &ldquo;Flush-Reclaim&rdquo; Chart-Pattern Scanner &amp; Alert Bot", SUB))
 story.append(Paragraph("Design, Backend Architecture &amp; Trading Concepts &mdash; explained from scratch", SUB))
 story.append(Spacer(1, 1.2 * cm))
-story.append(Paragraph("Technical Design Document &mdash; generated 2026-07-15", CENTER))
+story.append(Paragraph("Technical Design Document &mdash; generated 2026-07-24", CENTER))
 story.append(Spacer(1, 1.5 * cm))
 story.append(Paragraph(
     "Quantus watches a list of stocks on the daily and weekly timeframes and looks for one specific "
@@ -147,14 +147,14 @@ p("Quantus is a personal, single-user program that <b>scans stock charts and ale
 h2("At a glance")
 bullets([
     "<b>Data:</b> free end-of-day price history from Yahoo Finance (via the <font face='Courier'>yfinance</font> library). No paid data feed.",
-    "<b>Watchlist:</b> ~23 higher-volatility stocks (e.g. PLTR, COIN, RIVN, HOOD, FOXA), stored in a small database and editable live from Telegram. Volatile names are used because the setup depends on sharp sell-offs, which calm large-caps rarely produce.",
+    "<b>Watchlist:</b> a blend of ~57 liquid US names &mdash; a sector-diverse large-cap core plus a high-volatility sleeve (e.g. PLTR, COIN, RIVN, HOOD, FOXA) &mdash; stored in a small database and editable live from Telegram. The volatile sleeve supplies the sharp sell-offs the setup depends on (which calm large-caps rarely produce), while the core adds breadth and market-regime diversity for the walk-forward test.",
     "<b>Timeframes:</b> daily and weekly, scanned separately (a weekly signal is rarer and stronger).",
     "<b>The setup:</b> a double-bottom <i>flush-reclaim</i> &mdash; explained step by step in Sections 2&ndash;5.",
     "<b>Each alert carries:</b> a labelled candlestick chart, the entry / stop / target, the reward-to-risk ratio, and a suggested position size.",
     "<b>Scheduling:</b> a once-a-day scan run automatically; plus an always-on helper so the Telegram buttons respond instantly.",
     "<b>Honesty built in:</b> a backtester and a parameter sweep measure whether the idea actually works on history, with an out-of-sample check that guards against fooling ourselves.",
 ])
-p("The code is Python 3.11 (the <font face='Courier'>ddbot</font> package) with 85 automated tests. Every "
+p("The code is Python 3.11 (the <font face='Courier'>ddbot</font> package) with 101 automated tests. Every "
   "part sits behind a clean interface (data source, alerter, pattern, store) so pieces can be swapped "
   "without rewrites. <b>Important framing:</b> as the backtesting section shows, this strategy does not "
   "yet have a <i>proven</i> mechanical edge &mdash; so Quantus is used as a <b>discretionary finder</b> "
@@ -267,11 +267,19 @@ bullets([
 
 h2("3.8 Not fooling ourselves: walk-forward and out-of-sample")
 p("<b>Overfitting</b> is tuning a strategy until it looks perfect on the past, then watching it fail "
-  "live. Two defenses are built in. <b>Walk-forward</b> testing replays history bar by bar, only ever "
+  "live. Three defenses are built in. <b>Walk-forward</b> testing replays history bar by bar, only ever "
   "using data that existed at each moment. <b>Out-of-sample</b> testing hides the most recent slice of "
   "history, tunes on the older part, and then checks whether the choice still works on the hidden slice. "
   "If an edge vanishes out-of-sample, it was a mirage and is thrown away. (This exact check is what told "
   "us the original exit rule did not work &mdash; see Section 7.)")
+p("A third, added most recently, is <b>rolling walk-forward analysis</b>: rather than one hidden slice, "
+  "it cuts the whole history into several <i>sequential</i> time windows and scores the current strategy "
+  "in each one independently. A single good average can hide the truth that the edge lived entirely in "
+  "one lucky stretch; splitting into windows shows whether the result <b>repeats across different market "
+  "regimes</b>. Crucially, each window also reports how many trades it contains &mdash; a window with a "
+  "handful of trades is flagged as <b>low-sample</b>, so a shiny number backed by three trades is never "
+  "mistaken for evidence. This is what keeps the &lsquo;is there really an edge?&rsquo; question honest "
+  "as the strategy evolves (see Section 7.3).")
 story.append(PageBreak())
 
 # ============================== 4. ARCHITECTURE ===============================
@@ -318,7 +326,7 @@ table([
     ["charts/chart.py", "The labelled candlestick PNG attached to each alert (mplfinance)."],
     ["engine.py", "Runs fetch -> detect -> remember -> confirm -> alert per ticker/timeframe."],
     ["journal.py", "Replays past alerts against later prices to score how they actually did."],
-    ["backtest/*", "Walk-forward engine, metrics, parameter sweep, CLI."],
+    ["backtest/*", "Walk-forward engine, metrics, parameter sweep, rolling walk-forward folds, CLI."],
 ], col_widths=[5.2 * cm, 10.3 * cm])
 
 h2("4.3 Memory and &ldquo;idempotency&rdquo;")
@@ -448,6 +456,21 @@ image("exit_study.png", "Figure 5. Profit factor for every stop-model (rows) x t
 image("equity.png", "Figure 6. The running total (in R) of the backtested trades across the volatile "
       "universe, in date order. The shaded band is drawdown &mdash; how far below its prior peak the "
       "running total sat at each point.")
+
+h2("7.3 Is the edge stable over time? Rolling walk-forward")
+p("A single all-history average, however good, can be produced by one exceptional stretch surrounded by "
+  "mediocrity. To test for that, the backtester can slice the trades into several <b>sequential time "
+  "windows</b> (<font face='Courier'>--walk-forward N</font>) and score the current live configuration in "
+  "each window on its own, alongside a held-out newest slice. A trustworthy edge shows up as <b>most "
+  "windows staying positive</b> &mdash; not one big winner carrying the rest.")
+p("Run today, the result is <b>encouraging in direction but not yet conclusive</b>: the majority of "
+  "windows are positive and the held-out newest slice is positive, but <b>every window is flagged "
+  "low-sample</b>. The reason is the setup&rsquo;s rarity &mdash; the filters are strict enough that even "
+  "several years across a broad watchlist yield only a handful of trades per window. That is an honest, "
+  "useful finding rather than a disappointment: it says the direction of the edge is right, but there are "
+  "simply too few trades to call it proven &mdash; which is precisely why Quantus remains a "
+  "<b>discretionary finder</b>, and why raising the trade count (a more volatile watchlist, or carefully "
+  "relaxing the most restrictive filters) is the next question worth studying.")
 story.append(PageBreak())
 
 # ============================== 8. TIMELINE ===================================
@@ -466,7 +489,8 @@ table([
     ["Cleaner entries", "Required the reclaim candle to be a clean bullish shape (full green / hammer, small upper wick)."],
     ["Exit-model study", "Found the flush-low/neckline exit was negative out-of-sample; adopted an ATR stop + measured-move target that holds up."],
     ["Digest + health", "Weekly digest of live results, pushed to Telegram/Discord; scan/listener heartbeats warn on silent failure."],
-    ["This document", "Rewritten to explain the current strategy from scratch."],
+    ["Walk-forward validation", "Rolling multi-window walk-forward with per-window low-sample flags; confirmed the edge's direction holds but trades are too sparse to call it proven."],
+    ["This document", "Rewritten to explain the current strategy from scratch; updated with the rolling walk-forward finding."],
 ], col_widths=[3.6 * cm, 11.9 * cm])
 
 # ============================== 9. RISKS ======================================
@@ -488,8 +512,11 @@ bullets([
 # ============================== 10. ROADMAP ===================================
 h1("10. Roadmap")
 bullets([
-    "<b>Validate live:</b> let the journal accumulate real forward signals under the new exit and confirm "
-    "the edge holds outside the backtest &mdash; the single most valuable next step.",
+    "<b>Raise the trade count:</b> rolling walk-forward shows the edge is directionally right but every "
+    "window is low-sample. Study a more volatile watchlist and/or carefully relaxed filters to lift the "
+    "signal rate without breaking the out-of-sample edge &mdash; the single most valuable next step.",
+    "<b>Validate live:</b> let the journal accumulate real forward signals under the new exit and "
+    "reconcile them against the backtest as the live sample grows.",
     "<b>More patterns:</b> inverse head-and-shoulders, triple bottom &mdash; reusing the swing/neckline "
     "machinery.",
     "<b>Observability (in place):</b> a weekly digest of live results plus scan/listener heartbeats now "

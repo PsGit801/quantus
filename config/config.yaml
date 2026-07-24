@@ -1,6 +1,10 @@
 # Watchlist and detection settings. Secrets live in .env, not here.
-# Start with the Magnificent 7, then expand this list over time.
+# A blend of two sleeves so --walk-forward folds see enough trades AND multiple
+# regimes: (1) a sector-diverse large-cap core for breadth/liquidity, and (2) a
+# high-volatility sleeve that actually produces the sharp, high-volume flushes the
+# flush-reclaim setup depends on (calm large-caps rarely do). Trim or extend freely.
 tickers:
+  # Mega-cap tech / comm services
   - AAPL
   - MSFT
   - GOOGL
@@ -8,6 +12,61 @@ tickers:
   - NVDA
   - META
   - TSLA
+  - NFLX
+  - CRM
+  - ADBE
+  - AMD
+  - ORCL
+  - CSCO
+  # Financials
+  - JPM
+  - BAC
+  - GS
+  - V
+  - MA
+  # Healthcare
+  - UNH
+  - JNJ
+  - LLY
+  - ABBV
+  - PFE
+  # Consumer
+  - WMT
+  - HD
+  - COST
+  - MCD
+  - KO
+  - PG
+  - NKE
+  # Industrials / energy / materials
+  - CAT
+  - BA
+  - HON
+  - GE
+  - XOM
+  - CVX
+  # High-volatility sleeve (high-beta / momentum names that flush hard)
+  - PLTR
+  - COIN
+  - RIVN
+  - HOOD
+  - FOXA
+  - SOFI
+  - MARA
+  - RIOT
+  - AFRM
+  - ROKU
+  - DKNG
+  - SNAP
+  - UPST
+  - CVNA
+  - LCID
+  - PLUG
+  - ABNB
+  - SHOP
+  - NET
+  - SNOW
+  - CRWD
 
 # Scan each timeframe independently; every timeframe fires its own alert + chart.
 timeframes:
