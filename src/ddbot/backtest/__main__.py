@@ -12,6 +12,7 @@ from ..mtf import is_uptrend
 from .engine import BacktestConfig, backtest_ticker
 from .metrics import equity_curve, format_report, summarize
 from .sweep import cast_value, format_sweep, parse_sweep_specs, run_sweep
+from .walkforward import anchored_oos, rolling_folds, walk_forward_report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -41,6 +42,14 @@ def main(argv: list[str] | None = None) -> int:
         help="sweep ranking metric (in-sample)",
     )
     p.add_argument("--top", type=int, default=10, help="how many top sweep combos to show")
+    p.add_argument(
+        "--walk-forward", type=int, default=0, metavar="N",
+        help="also report the current config across N sequential entry-date folds (0 = off)",
+    )
+    p.add_argument(
+        "--min-fold-trades", type=int, default=10,
+        help="flag walk-forward folds with fewer trades than this as low-sample",
+    )
     p.add_argument("--equity", type=float, help="starting $ for a fixed-fractional equity curve")
     p.add_argument("--risk-pct", type=float, help="risk fraction per trade (default: config risk)")
     p.add_argument("--no-mtf", action="store_true", help="disable multi-timeframe confirmation")
@@ -108,6 +117,13 @@ def main(argv: list[str] | None = None) -> int:
         f"CAGR {eq.cagr_pct:+.1f}%  |  max drawdown {eq.max_drawdown_pct:.1f}%\n"
         f"  (ignores slippage/commissions/dividends and concurrent-position capital limits)\n"
     )
+
+    # Walk-forward: is the edge stable across time, or concentrated in one window?
+    if args.walk_forward and all_trades:
+        folds = rolling_folds(all_trades, args.walk_forward)
+        anchored = anchored_oos(all_trades, args.oos_split)
+        print(walk_forward_report(folds, overall, args.min_fold_trades, anchored))
+        print()
 
     if args.csv and all_trades:
         fields = [f.name for f in dataclasses.fields(all_trades[0])]
