@@ -154,7 +154,7 @@ bullets([
     "<b>Scheduling:</b> a once-a-day scan run automatically; plus an always-on helper so the Telegram buttons respond instantly.",
     "<b>Honesty built in:</b> a backtester and a parameter sweep measure whether the idea actually works on history, with an out-of-sample check that guards against fooling ourselves.",
 ])
-p("The code is Python 3.11 (the <font face='Courier'>ddbot</font> package) with 101 automated tests. Every "
+p("The code is Python 3.11 (the <font face='Courier'>ddbot</font> package) with 113 automated tests. Every "
   "part sits behind a clean interface (data source, alerter, pattern, store) so pieces can be swapped "
   "without rewrites. <b>Important framing:</b> as the backtesting section shows, this strategy does not "
   "yet have a <i>proven</i> mechanical edge &mdash; so Quantus is used as a <b>discretionary finder</b> "
@@ -263,6 +263,10 @@ bullets([
     "<b>Profit factor:</b> total winning R divided by total losing R. Above 1.0 is profitable; ~2+ is strong.",
     "<b>Max drawdown:</b> the deepest peak-to-trough dip of the running total &mdash; the worst stretch "
     "you would have had to sit through.",
+    "<b>Statistical significance:</b> with only a handful of trades, even a good average can be luck. A "
+    "<b>bootstrap</b> (resampling the trades thousands of times) gives a 95% confidence interval for the "
+    "average R; only when that interval&rsquo;s lower bound stays <b>above zero</b> is the positive edge "
+    "unlikely to be noise. A small sample is flagged explicitly so a shiny number is never mistaken for proof.",
 ])
 
 h2("3.8 Not fooling ourselves: walk-forward and out-of-sample")
@@ -471,6 +475,11 @@ p("Run today, the result is <b>encouraging in direction but not yet conclusive</
   "simply too few trades to call it proven &mdash; which is precisely why Quantus remains a "
   "<b>discretionary finder</b>, and why raising the trade count (a more volatile watchlist, or carefully "
   "relaxing the most restrictive filters) is the next question worth studying.")
+p("To support exactly that study, the <b>parameter sweep</b> (Section 3.8) grids not only the detection "
+  "thresholds but also the <b>exit model</b> (stop and target rules), splits every combination into "
+  "in-sample and out-of-sample, and flags whether each one&rsquo;s out-of-sample edge is <b>statistically "
+  "significant</b> (its bootstrap confidence interval on average R stays above zero). That makes it easy "
+  "to see which settings genuinely survive, rather than which merely looked best on the tuning data.")
 story.append(PageBreak())
 
 # ============================== 8. TIMELINE ===================================

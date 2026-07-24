@@ -3,11 +3,12 @@ from datetime import date
 import pytest
 
 from ddbot.config import DetectionConfig
-from ddbot.backtest.engine import Trade
+from ddbot.backtest.engine import BacktestConfig, Trade
 from ddbot.backtest.sweep import (
     cast_value,
     combos,
     parse_sweep_specs,
+    split_params,
     split_trades,
 )
 
@@ -34,6 +35,27 @@ def test_cast_value_types_from_field():
 def test_cast_value_rejects_unknown_param():
     with pytest.raises(ValueError):
         cast_value(DetectionConfig(), "not_a_param", "1")
+
+
+def test_cast_value_casts_backtest_fields_when_bt_given():
+    bt = BacktestConfig()
+    assert cast_value(DetectionConfig(), "stop", "atr", bt) == "atr"          # str field
+    assert cast_value(DetectionConfig(), "atr_mult", "2.5", bt) == 2.5        # float field
+    assert isinstance(cast_value(DetectionConfig(), "atr_mult", "2.5", bt), float)
+    assert cast_value(DetectionConfig(), "max_hold_bars", "45", bt) == 45     # int field
+
+
+def test_cast_value_backtest_param_rejected_without_bt():
+    with pytest.raises(ValueError):
+        cast_value(DetectionConfig(), "stop", "atr")  # no bt base -> unknown
+
+
+def test_split_params_partitions_detection_vs_backtest():
+    det, bt = split_params(
+        {"flush_atr_mult": 3.0, "stop": "atr", "atr_mult": 2.5}, DetectionConfig()
+    )
+    assert det == {"flush_atr_mult": 3.0}
+    assert bt == {"stop": "atr", "atr_mult": 2.5}
 
 
 def test_combos_cartesian_product():

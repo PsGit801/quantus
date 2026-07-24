@@ -10,7 +10,14 @@ from ..config import load_config
 from ..data.yahoo import YahooDataProvider
 from ..mtf import is_uptrend
 from .engine import BacktestConfig, backtest_ticker
-from .metrics import equity_curve, format_report, summarize
+from .metrics import (
+    equity_curve,
+    format_report,
+    format_significance,
+    r_distribution,
+    significance,
+    summarize,
+)
 from .sweep import cast_value, format_sweep, parse_sweep_specs, run_sweep
 from .walkforward import anchored_oos, rolling_folds, walk_forward_report
 
@@ -33,7 +40,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--csv", help="write individual trades to this CSV path")
     p.add_argument(
         "--sweep", action="append", default=[],
-        help="grid-search a detection param: PARAM=v1,v2,... (repeatable)",
+        help="grid-search a detection OR exit-model param: PARAM=v1,v2,... (repeatable). "
+             "e.g. stop=atr,flush_low or atr_mult=2.5,3.5",
     )
     p.add_argument("--oos-split", type=float, default=0.3, help="out-of-sample fraction (newest)")
     p.add_argument(
@@ -68,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     # --- sweep mode -----------------------------------------------------------
     if args.sweep:
         typed = {
-            param: [cast_value(detection, param, v) for v in vals]
+            param: [cast_value(detection, param, v, bt) for v in vals]
             for param, vals in parse_sweep_specs(args.sweep).items()
         }
         dfs = {tk: provider.get_ohlcv(tk, args.timeframe, args.history_bars) for tk in tickers}
@@ -105,6 +113,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\nDouble-bottom backtest — {args.timeframe}, stop={args.stop}, target={args.target}{mtf_note}{span}\n")
     print(format_report(per_ticker, overall))
     print()
+
+    # How the edge is distributed, and whether it's distinguishable from noise given n.
+    if all_trades:
+        print(format_significance(r_distribution(all_trades), significance(all_trades)))
+        print()
 
     # Dollar equity curve (fixed-fractional). Shown if --equity given, else uses config.
     start_eq = args.equity if args.equity is not None else cfg.risk.account_equity
