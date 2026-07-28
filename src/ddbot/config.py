@@ -42,10 +42,12 @@ class DetectionConfig(BaseModel):
     # Exit model (computed at confirmation, entry = reclaim close). A backtest exit-model
     # study found an ATR stop (~3.5x) + measured-move target holds out-of-sample, unlike the
     # original flush-low stop / neckline target (which was negative OOS).
-    stop_mode: str = "atr"             # "atr" | "flush_low" | "reclaim_bar_low"
+    stop_mode: str = "atr"             # "atr" | "flush_low" | "reclaim_bar_low" | "swing_low"
     stop_atr_window: int = 14
     stop_atr_mult: float = 3.5         # stop = entry - this x ATR when stop_mode == "atr"
-    target_mode: str = "measured_move"  # "measured_move" (neckline + (neckline - stop)) | "neckline"
+    stop_tick: float = 0.01            # "swing_low": stop = recent swing low - this (one tick)
+    target_mode: str = "measured_move"  # "measured_move" (neckline + (neckline - stop)) | "neckline" | "r_multiple"
+    target_r_multiple: float = 1.85    # "r_multiple": target = entry + this x (entry - stop)
 
 
 class RiskConfig(BaseModel):

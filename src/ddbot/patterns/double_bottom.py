@@ -193,15 +193,30 @@ def _is_valid_reclaim_bar(o: float, h: float, l: float, c: float, cfg: Detection
     return False                     # weak/indecision bar
 
 
+def swing_low_stop(flush_low: float, tick: float) -> float:
+    """One tick below the immediate swing low before entry.
+
+    In a flush-reclaim the most recent swing low ahead of the reclaim is the flush (B2)
+    bar itself — the "latest big red bar" a chart reader points to. (A symmetric fractal
+    can't even confirm it as a swing until `swing_k` bars later, i.e. after entry, so the
+    flush low is both the correct and the only look-ahead-free choice.) The stop sits one
+    tick under it, matching how a trader marks "just below the swing low".
+    """
+    return float(flush_low) - tick
+
+
 def compute_stop(
     entry: float, flush_low: float, reclaim_bar_low: float,
     highs, lows, closes, confirm_idx: int, cfg: DetectionConfig,
 ) -> float:
     """The trade's stop, per cfg.stop_mode. Default 'atr' = entry - mult x ATR (a volatility-
     scaled stop that a backtest exit study found holds out-of-sample); 'reclaim_bar_low' is
-    tight (below the entry bar); 'flush_low' is the original deep-flush stop and the fallback."""
+    tight (below the entry bar); 'swing_low' is one tick below the most recent swing low;
+    'flush_low' is the original deep-flush stop and the fallback."""
     if cfg.stop_mode == "reclaim_bar_low":
         return reclaim_bar_low
+    if cfg.stop_mode == "swing_low":
+        return swing_low_stop(flush_low, cfg.stop_tick)
     if cfg.stop_mode == "atr":
         atr = _atr(highs, lows, closes, confirm_idx, cfg.stop_atr_window)
         if atr is not None and atr > 0:
@@ -209,11 +224,47 @@ def compute_stop(
     return flush_low
 
 
-def compute_target(neckline: float, stop: float, cfg: DetectionConfig) -> float:
-    """The trade's target, per cfg.target_mode: a measured move off the neckline, or the neckline."""
+def compute_target(entry: float, neckline: float, stop: float, cfg: DetectionConfig) -> float:
+    """The trade's target, per cfg.target_mode: an R-multiple of the risk, a measured move
+    off the neckline, or the neckline itself."""
+    if cfg.target_mode == "r_multiple":
+        return entry + cfg.target_r_multiple * (entry - stop)
     if cfg.target_mode == "measured_move":
         return neckline + (neckline - stop)
     return neckline
+
+
+def exit_options(p: DoubleBottom, df: pd.DataFrame, cfg: DetectionConfig) -> list[tuple[str, float, float]]:
+    """Both stop methods the user trades, each with an R-multiple target, for the alert.
+
+    Returns [(label, stop, target), ...] so a human can pick per trade:
+      - swing-low: one tick below the flush (B2) swing low,
+      - 1×ATR:     entry - 1×ATR(cfg.stop_atr_window).
+    Both targets use cfg.target_r_multiple. The 1×ATR option is omitted if ATR is unknown.
+    """
+    if p.confirm_close is None:
+        return []
+    entry = float(p.confirm_close)
+    flush_low = min(p.b1_low, p.b2_low)
+    r = cfg.target_r_multiple
+
+    opts: list[tuple[str, float, float]] = []
+    s_swing = swing_low_stop(flush_low, cfg.stop_tick)
+    opts.append(("Swing-low stop", s_swing, entry + r * (entry - s_swing)))
+
+    dates = _dates(df)
+    if p.confirm_date in dates:
+        i = dates.index(p.confirm_date)
+        atr = _atr(
+            df["high"].to_numpy(dtype=float),
+            df["low"].to_numpy(dtype=float),
+            df["close"].to_numpy(dtype=float),
+            i, cfg.stop_atr_window,
+        )
+        if atr is not None and atr > 0:
+            s_atr = entry - atr  # 1×ATR (the user's "one ATR below entry")
+            opts.append(("1×ATR stop", s_atr, entry + r * (entry - s_atr)))
+    return opts
 
 
 def check_confirmation(
@@ -257,7 +308,7 @@ def check_confirmation(
                 confirm_date=dates[i],
                 confirm_close=entry,
                 stop_price=stop_px,
-                target_price=compute_target(neckline, stop_px, cfg),
+                target_price=compute_target(entry, neckline, stop_px, cfg),
             )
 
     # No reclaim: if the window has fully elapsed, the setup is dead.

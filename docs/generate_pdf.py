@@ -154,7 +154,7 @@ bullets([
     "<b>Scheduling:</b> a once-a-day scan run automatically; plus an always-on helper so the Telegram buttons respond instantly.",
     "<b>Honesty built in:</b> a backtester and a parameter sweep measure whether the idea actually works on history, with an out-of-sample check that guards against fooling ourselves.",
 ])
-p("The code is Python 3.11 (the <font face='Courier'>ddbot</font> package) with 113 automated tests. Every "
+p("The code is Python 3.11 (the <font face='Courier'>ddbot</font> package) with 120 automated tests. Every "
   "part sits behind a clean interface (data source, alerter, pattern, store) so pieces can be swapped "
   "without rewrites. <b>Important framing:</b> as the backtesting section shows, this strategy does not "
   "yet have a <i>proven</i> mechanical edge &mdash; so Quantus is used as a <b>discretionary finder</b> "
@@ -383,8 +383,8 @@ table([
     ["reclaim_min_body_frac", "0.60", "Full green bar: body >= 60% of the bar's range."],
     ["reclaim_max_upper_wick_frac", "0.15", "Upper wick <= 15% of range (no 'long head')."],
     ["reclaim_min_lower_wick_frac", "0.50", "Hammer: lower wick >= 50% of range."],
-    ["stop_mode / stop_atr_mult", "atr / 3.5", "Stop = entry - 3.5x ATR (see Section 7)."],
-    ["target_mode", "measured_move", "Target = neckline + (neckline - stop)."],
+    ["stop_mode / stop_tick", "swing_low / 0.01", "Stop = flush (B2) swing low - one tick (see Section 7)."],
+    ["target_mode / target_r_multiple", "r_multiple / 1.85", "Target = entry + 1.85 x (entry - stop)."],
 ], col_widths=[5.6 * cm, 2.6 * cm, 7.3 * cm])
 p("A note on tooling: multi-bar chart patterns like this are <b>not</b> provided by off-the-shelf "
   "libraries such as TA-Lib (which cover indicators and single-candle patterns). The structural "
@@ -397,10 +397,12 @@ h1("6. Alerts, Charts, Interaction &amp; Scheduling")
 h2("6.1 What an alert looks like")
 p("On confirmation the bot renders a labelled candlestick chart (the two bottoms, the neckline, and the "
   "reclaim candle marked) and sends it, with the message, to Telegram and Discord at once; a failure on "
-  "one channel never blocks the other. The message states the entry (reclaim close), the neckline, the "
-  "<b>target</b> and <b>stop</b>, the <b>reward-to-risk</b> ratio, and a <b>suggested position size</b> "
-  "(how many shares to risk a fixed 1% of a configured account). A footnote reminds you it is a "
-  "discretionary setup to review by eye.")
+  "one channel never blocks the other. The message states the entry (reclaim close), the neckline, and "
+  "<b>two stop options</b> the trader chooses between &mdash; a <b>swing-low stop</b> (one tick below the "
+  "flush low) and a <b>1&times;ATR stop</b> &mdash; each shown with its own <b>R-multiple target</b> "
+  "(default 1.85R) and <b>reward-to-risk</b>, plus a <b>suggested position size</b> (shares to risk a "
+  "fixed 1% of a configured account, sized off the primary swing-low stop). A footnote reminds you it is "
+  "a discretionary setup to review by eye.")
 
 h2("6.2 Multi-timeframe agreement")
 p("A daily signal is stronger when the bigger picture agrees. With the multi-timeframe filter on, a "
@@ -480,6 +482,18 @@ p("To support exactly that study, the <b>parameter sweep</b> (Section 3.8) grids
   "in-sample and out-of-sample, and flags whether each one&rsquo;s out-of-sample edge is <b>statistically "
   "significant</b> (its bootstrap confidence interval on average R stays above zero). That makes it easy "
   "to see which settings genuinely survive, rather than which merely looked best on the tuning data.")
+
+h2("7.4 Exit-model refinement: swing-low / 1&times;ATR stops with an R-multiple target")
+p("A follow-up study compared the earlier default against the two stops a discretionary trader actually "
+  "uses, each paired with a fixed <b>1.85R</b> target: a <b>swing-low stop</b> (one tick below the flush "
+  "low) and a <b>1&times;ATR stop</b>. Because the exit model does not change which signals fire, all "
+  "three were measured on the same trades. Both trader methods <b>beat</b> the earlier "
+  "3.5&times;ATR / measured-move exit: higher average R and profit factor, and &mdash; the point that "
+  "matters &mdash; a <b>higher confidence-interval floor</b> (more statistically robust, not less). The "
+  "capped R-multiple target is why: it turns every win into a clean +1.85R instead of a variable "
+  "measured move. The swing-low stop is now the <b>canonical</b> (stored, journalled, position-sized) "
+  "exit, and each alert additionally shows the 1&times;ATR option so the trader picks per trade. The "
+  "low-sample caveat from 7.3 still applies &mdash; better, not yet proven.")
 story.append(PageBreak())
 
 # ============================== 8. TIMELINE ===================================
@@ -499,7 +513,8 @@ table([
     ["Exit-model study", "Found the flush-low/neckline exit was negative out-of-sample; adopted an ATR stop + measured-move target that holds up."],
     ["Digest + health", "Weekly digest of live results, pushed to Telegram/Discord; scan/listener heartbeats warn on silent failure."],
     ["Walk-forward validation", "Rolling multi-window walk-forward with per-window low-sample flags; confirmed the edge's direction holds but trades are too sparse to call it proven."],
-    ["This document", "Rewritten to explain the current strategy from scratch; updated with the rolling walk-forward finding."],
+    ["Exit refinement", "Added swing-low & 1xATR stops with a 1.85R target; both beat the old exit OOS. Swing-low is canonical; alerts show both options to pick from."],
+    ["This document", "Rewritten to explain the current strategy from scratch; updated with the walk-forward and exit-refinement findings."],
 ], col_widths=[3.6 * cm, 11.9 * cm])
 
 # ============================== 9. RISKS ======================================

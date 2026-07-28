@@ -32,11 +32,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--target", choices=["pattern", "neckline", "measured_move", "r_multiple"],
                    default="pattern", help="'pattern' = the live strategy's target (default)")
     p.add_argument("--r-target", type=float, default=2.0, help="reward:risk when --target r_multiple")
-    p.add_argument("--stop", choices=["pattern", "flush_low", "reclaim_bar_low", "atr"],
+    p.add_argument("--stop", choices=["pattern", "flush_low", "reclaim_bar_low", "atr", "swing_low"],
                    default="pattern",
                    help="'pattern' = the live strategy's stop (default); or override for research")
     p.add_argument("--atr-window", type=int, default=14, help="ATR window when --stop atr")
     p.add_argument("--atr-mult", type=float, default=1.5, help="stop = entry - mult x ATR when --stop atr")
+    p.add_argument("--tick", type=float, default=0.01, help="one tick below the swing low when --stop swing_low")
     p.add_argument("--csv", help="write individual trades to this CSV path")
     p.add_argument(
         "--sweep", action="append", default=[],
@@ -70,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     bt = BacktestConfig(
         target=args.target, r_target=args.r_target, max_hold_bars=args.max_hold,
         stop=args.stop, atr_window=args.atr_window, atr_mult=args.atr_mult,
+        stop_tick=args.tick,
     )
     provider = YahooDataProvider(drop_forming_bar=cfg.drop_forming_bar)
 

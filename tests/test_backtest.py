@@ -117,6 +117,29 @@ def test_stop_atr_sits_between_flush_and_reclaim_bar():
     assert tr.outcome == "win"
 
 
+def test_stop_swing_low_is_one_tick_below_flush():
+    # Method 1 in the engine: stop = flush (B2) low - one tick. _pattern has base=100.
+    df = _forward_df(
+        highs=[106, 106, 106, 111, 111, 111],
+        lows=[104, 104, 104, 106, 106, 106],
+        closes=[105, 105, 105, 108, 108, 108],
+    )
+    tr = simulate_trade(df, _pattern(df), BacktestConfig(stop="swing_low", stop_tick=0.01))
+    assert tr.stop == 99.99                # 100 (flush low) - 0.01 tick
+    assert tr.outcome == "win"
+
+
+def test_target_r_multiple_from_entry():
+    # Target = entry + r_target x (entry - stop). entry 105, flush-low stop 100, risk 5.
+    df = _forward_df(
+        highs=[106, 106, 106, 111, 111, 116],
+        lows=[104, 104, 104, 106, 106, 106],
+        closes=[105, 105, 105, 108, 108, 108],
+    )
+    tr = simulate_trade(df, _pattern(df), BacktestConfig(stop="flush_low", target="r_multiple", r_target=1.85))
+    assert tr.target == 105 + 1.85 * 5     # 114.25
+
+
 # --- walk-forward signal discovery (no look-ahead) ------------------------------
 
 def test_find_signals_confirms_on_reclaim():

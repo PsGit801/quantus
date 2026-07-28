@@ -15,7 +15,7 @@ import pandas as pd
 
 from ..config import DetectionConfig
 from ..patterns.base import DoubleBottom, PatternState
-from ..patterns.double_bottom import _atr, check_confirmation, detect
+from ..patterns.double_bottom import _atr, check_confirmation, detect, swing_low_stop
 
 
 @dataclass(frozen=True)
@@ -25,9 +25,10 @@ class BacktestConfig:
     target: str = "pattern"        # "pattern" | "neckline" | "measured_move" | "r_multiple"
     r_target: float = 2.0          # used when target == "r_multiple"
     max_hold_bars: int = 60
-    stop: str = "pattern"          # "pattern" | "flush_low" | "reclaim_bar_low" | "atr"
+    stop: str = "pattern"          # "pattern" | "flush_low" | "reclaim_bar_low" | "atr" | "swing_low"
     atr_window: int = 14           # used when stop == "atr"
     atr_mult: float = 1.5          # stop = entry - atr_mult x ATR when stop == "atr"
+    stop_tick: float = 0.01        # stop = flush (B2) swing low - this when stop == "swing_low"
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,8 @@ def _stop_price(p: DoubleBottom, df: pd.DataFrame, j: int, entry: float, bt: Bac
         return float(df["low"].iloc[j])         # just under the reclaim (entry) bar
     if bt.stop == "flush_low":
         return min(p.b1_low, p.b2_low)          # the deep flush low, ignoring any stored stop
+    if bt.stop == "swing_low":                  # one tick below the flush (B2) swing low
+        return swing_low_stop(min(p.b1_low, p.b2_low), bt.stop_tick)
     if bt.stop == "atr":
         atr = _atr(
             df["high"].to_numpy(dtype=float),
