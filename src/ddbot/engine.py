@@ -12,7 +12,7 @@ from .config import AppConfig
 from .data.base import DataProvider
 from .mtf import is_uptrend
 from .patterns.base import PatternState
-from .patterns.double_bottom import check_confirmation, detect
+from .patterns.double_bottom import check_confirmation, detect, exit_options
 from .state.store import PatternStore
 
 log = logging.getLogger(__name__)
@@ -106,7 +106,8 @@ class Engine:
         return is_uptrend(self._higher_df_cache[ticker], confirm_date, m.sma_window)
 
     def _alert(self, pattern, df) -> None:
-        message = format_signal(pattern, self.cfg.risk)
+        options = exit_options(pattern, df, self.cfg.detection)
+        message = format_signal(pattern, self.cfg.risk, options)
         try:
             chart_path = render(df, pattern, self.cfg.chart_dir)
         except Exception as exc:  # never let a chart failure block the alert

@@ -124,6 +124,30 @@ def test_confirmation_flush_low_stop_matches_bottom():
     assert res.target_price == res.neckline
 
 
+def test_confirmation_swing_low_stop_is_one_tick_below_flush():
+    # Method 1: stop = the immediate (flush/B2) swing low minus one tick.
+    cfg = TEST_CFG.model_copy(update={
+        "stop_mode": "swing_low", "stop_tick": 0.01, "target_mode": "neckline",
+    })
+    df = flush_reclaim()
+    res = check_confirmation(detect(df, "T", "1d", cfg)[0], df, cfg)
+    assert res.stop_price == min(res.b1_low, res.b2_low) - 0.01   # 88 - 0.01
+    assert res.stop_reference == res.stop_price
+
+
+def test_confirmation_r_multiple_target():
+    # Target = entry + R x (entry - stop). Pair with the swing-low stop for a clean R.
+    cfg = TEST_CFG.model_copy(update={
+        "stop_mode": "swing_low", "stop_tick": 0.01,
+        "target_mode": "r_multiple", "target_r_multiple": 1.85,
+    })
+    df = flush_reclaim()
+    res = check_confirmation(detect(df, "T", "1d", cfg)[0], df, cfg)
+    risk = res.confirm_close - res.stop_price
+    assert abs(res.target_price - (res.confirm_close + 1.85 * risk)) < 1e-9
+    assert res.target == res.target_price
+
+
 def test_invalidated_on_deeper_flush_before_reclaim():
     closes = list(_CLOSE)
     closes[16] = 85.0  # closes below the flush low (88) -> failed
