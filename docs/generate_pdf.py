@@ -124,7 +124,7 @@ story.append(Spacer(1, 0.3 * cm))
 story.append(Paragraph("A Double-Bottom &ldquo;Flush-Reclaim&rdquo; Chart-Pattern Scanner &amp; Alert Bot", SUB))
 story.append(Paragraph("Design, Backend Architecture &amp; Trading Concepts &mdash; explained from scratch", SUB))
 story.append(Spacer(1, 1.2 * cm))
-story.append(Paragraph("Technical Design Document &mdash; generated 2026-07-24", CENTER))
+story.append(Paragraph("Technical Design Document &mdash; generated 2026-07-28", CENTER))
 story.append(Spacer(1, 1.5 * cm))
 story.append(Paragraph(
     "Quantus watches a list of stocks on the daily and weekly timeframes and looks for one specific "
