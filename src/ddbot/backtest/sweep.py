@@ -62,11 +62,17 @@ def cast_value(base: DetectionConfig, param: str, raw: str, bt: BacktestConfig |
 
 
 def split_params(combo: dict, base: DetectionConfig) -> tuple[dict, dict]:
-    """Partition a combo into (detection updates, backtest updates) by field name."""
+    """Partition a combo into (detection updates, backtest updates) by field name.
+
+    BacktestConfig takes precedence for names in BOTH configs (e.g. ``stop_tick``): during
+    a backtest the exit is driven by ``_stop_price``/``_target_price`` off BacktestConfig,
+    so a shared field only takes effect if routed there — otherwise the sweep is a silent
+    no-op for that param.
+    """
     det: dict = {}
     bt: dict = {}
     for k, v in combo.items():
-        (det if k in type(base).model_fields else bt)[k] = v
+        (bt if k in _BT_FIELDS else det)[k] = v
     return det, bt
 
 
@@ -118,7 +124,9 @@ def run_sweep(
         ts = df.index[cut]
         cutoffs[tk] = ts.date() if hasattr(ts, "date") else ts
 
-    rows: list[SweepRow] = []
+    # Backtest every combo; keep the OOS trades so significance can be bootstrapped later
+    # for the top rows only (a 10k-resample bootstrap per combo would dominate runtime).
+    scored: list[tuple[dict, Stats, Stats, list[Trade]]] = []
     for combo in combos(typed_specs):
         det_update, bt_update = split_params(combo, base_detection)
         detection = base_detection.model_copy(update=det_update) if det_update else base_detection
@@ -132,10 +140,14 @@ def run_sweep(
             in_s, oos = split_trades(trades, cutoffs[tk])
             is_all.extend(in_s)
             oos_all.extend(oos)
-        rows.append(SweepRow(combo, summarize(is_all), summarize(oos_all), significance(oos_all).significant))
+        scored.append((combo, summarize(is_all), summarize(oos_all), oos_all))
 
-    rows.sort(key=lambda r: _objective_value(r.is_stats, objective), reverse=True)
-    return rows[:top]
+    scored.sort(key=lambda s: _objective_value(s[1], objective), reverse=True)
+    # Bootstrap OOS significance only for the rows we actually return.
+    return [
+        SweepRow(combo, is_stats, oos_stats, significance(oos_all).significant)
+        for combo, is_stats, oos_stats, oos_all in scored[:top]
+    ]
 
 
 def format_sweep(rows: list[SweepRow], objective: str) -> str:

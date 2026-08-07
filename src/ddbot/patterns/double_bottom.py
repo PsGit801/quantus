@@ -234,36 +234,51 @@ def compute_target(entry: float, neckline: float, stop: float, cfg: DetectionCon
     return neckline
 
 
-def exit_options(p: DoubleBottom, df: pd.DataFrame, cfg: DetectionConfig) -> list[tuple[str, float, float]]:
-    """Both stop methods the user trades, each with an R-multiple target, for the alert.
+_STOP_LABELS = {
+    "swing_low": "Swing-low stop",
+    "reclaim_bar_low": "Reclaim-bar stop",
+    "flush_low": "Flush-low stop",
+}
 
-    Returns [(label, stop, target), ...] so a human can pick per trade:
-      - swing-low: one tick below the flush (B2) swing low,
-      - 1×ATR:     entry - 1×ATR(cfg.stop_atr_window).
-    Both targets use cfg.target_r_multiple. The 1×ATR option is omitted if ATR is unknown.
+
+def exit_options(p: DoubleBottom, df: pd.DataFrame, cfg: DetectionConfig) -> list[tuple[str, float, float]]:
+    """Exit choices for the alert as [(label, stop, target), ...].
+
+    The FIRST option is always the configured, *stored* exit (``p.stop_reference`` /
+    ``p.target``) — the one the journal scores and position sizing uses — so the alert can
+    never disagree with what the strategy recorded. The SECOND is the trader's alternate
+    stop (a ``(alt)`` the journal does NOT track): the 1×ATR stop when the configured stop
+    is the swing low, or the swing-low stop otherwise. Its target keeps the same R-multiple.
     """
     if p.confirm_close is None:
         return []
     entry = float(p.confirm_close)
-    flush_low = min(p.b1_low, p.b2_low)
     r = cfg.target_r_multiple
+    flush_low = min(p.b1_low, p.b2_low)
 
-    opts: list[tuple[str, float, float]] = []
-    s_swing = swing_low_stop(flush_low, cfg.stop_tick)
-    opts.append(("Swing-low stop", s_swing, entry + r * (entry - s_swing)))
+    # Primary = exactly what confirmation stored (label reflects cfg.stop_mode).
+    if cfg.stop_mode == "atr":
+        primary_label = f"{cfg.stop_atr_mult:g}×ATR stop"
+    else:
+        primary_label = _STOP_LABELS.get(cfg.stop_mode, "Stop")
+    opts: list[tuple[str, float, float]] = [(primary_label, p.stop_reference, p.target)]
 
-    dates = _dates(df)
-    if p.confirm_date in dates:
-        i = dates.index(p.confirm_date)
-        atr = _atr(
-            df["high"].to_numpy(dtype=float),
-            df["low"].to_numpy(dtype=float),
-            df["close"].to_numpy(dtype=float),
-            i, cfg.stop_atr_window,
-        )
-        if atr is not None and atr > 0:
-            s_atr = entry - atr  # 1×ATR (the user's "one ATR below entry")
-            opts.append(("1×ATR stop", s_atr, entry + r * (entry - s_atr)))
+    # Alternate = the other stop the user trades, at the same R-multiple. Informational.
+    if cfg.stop_mode == "swing_low":
+        dates = _dates(df)
+        if p.confirm_date in dates:
+            atr = _atr(
+                df["high"].to_numpy(dtype=float),
+                df["low"].to_numpy(dtype=float),
+                df["close"].to_numpy(dtype=float),
+                dates.index(p.confirm_date), cfg.stop_atr_window,
+            )
+            if atr is not None and atr > 0:
+                s_atr = entry - atr  # 1×ATR (the user's "one ATR below entry")
+                opts.append(("1×ATR stop (alt)", s_atr, entry + r * (entry - s_atr)))
+    else:
+        s_swing = swing_low_stop(flush_low, cfg.stop_tick)
+        opts.append(("Swing-low stop (alt)", s_swing, entry + r * (entry - s_swing)))
     return opts
 
 

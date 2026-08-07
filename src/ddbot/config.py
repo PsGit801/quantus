@@ -39,14 +39,16 @@ class DetectionConfig(BaseModel):
     reclaim_max_upper_wick_frac: float = 0.15  # both shapes: upper wick <= this x range
     reclaim_min_lower_wick_frac: float = 0.50  # hammer: lower wick >= this x range
 
-    # Exit model (computed at confirmation, entry = reclaim close). A backtest exit-model
-    # study found an ATR stop (~3.5x) + measured-move target holds out-of-sample, unlike the
-    # original flush-low stop / neckline target (which was negative OOS).
-    stop_mode: str = "atr"             # "atr" | "flush_low" | "reclaim_bar_low" | "swing_low"
+    # Exit model (computed at confirmation, entry = reclaim close). Canonical is Method 1:
+    # one tick below the flush (B2) swing low, with a 1.85R target. A walk-forward +
+    # significance study found this (and a 1xATR variant) beat the earlier 3.5xATR /
+    # measured-move exit out-of-sample. Defaults match config/config.yaml so behavior is the
+    # same when the YAML is absent.
+    stop_mode: str = "swing_low"       # "swing_low" | "atr" | "flush_low" | "reclaim_bar_low"
     stop_atr_window: int = 14
     stop_atr_mult: float = 3.5         # stop = entry - this x ATR when stop_mode == "atr"
-    stop_tick: float = 0.01            # "swing_low": stop = recent swing low - this (one tick)
-    target_mode: str = "measured_move"  # "measured_move" (neckline + (neckline - stop)) | "neckline" | "r_multiple"
+    stop_tick: float = 0.01            # "swing_low": stop = flush swing low - this (one tick)
+    target_mode: str = "r_multiple"    # "r_multiple" (entry + R x risk) | "measured_move" | "neckline"
     target_r_multiple: float = 1.85    # "r_multiple": target = entry + this x (entry - stop)
 
 

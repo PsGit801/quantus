@@ -136,6 +136,10 @@ class Significance:
     ci_high: float       # 95% bootstrap CI on mean R (upper)
     significant: bool    # ci_low > 0 — positive edge distinguishable from zero
     adequate_sample: bool
+    min_sample: int      # the n threshold used for adequate_sample (single source of truth)
+
+
+DEFAULT_MIN_SAMPLE = 30  # below this, treat a "significant" result as too thin to trust
 
 
 def r_distribution(trades: list[Trade]) -> RDistribution:
@@ -154,12 +158,12 @@ def r_distribution(trades: list[Trade]) -> RDistribution:
 
 
 def significance(
-    trades: list[Trade], n_boot: int = 10_000, min_sample: int = 30, seed: int = 0
+    trades: list[Trade], n_boot: int = 10_000, min_sample: int = DEFAULT_MIN_SAMPLE, seed: int = 0
 ) -> Significance:
     """Bootstrap a 95% CI on mean R. Deterministic given `seed` (so tests are stable)."""
     n = len(trades)
     if n == 0:
-        return Significance(0, 0.0, 0.0, 0.0, 0.0, 0.0, False, False)
+        return Significance(0, 0.0, 0.0, 0.0, 0.0, 0.0, False, False, min_sample)
     rs = np.array([t.r_multiple for t in trades], dtype=float)
     mean = float(rs.mean())
     std = float(rs.std(ddof=1)) if n > 1 else 0.0
@@ -180,10 +184,11 @@ def significance(
         ci_high=round(ci_high, 3),
         significant=ci_low > 0,
         adequate_sample=n >= min_sample,
+        min_sample=min_sample,
     )
 
 
-def format_significance(dist: RDistribution, sig: Significance, min_sample: int = 30) -> str:
+def format_significance(dist: RDistribution, sig: Significance) -> str:
     if sig.n == 0:
         return "Distribution & significance: no trades."
     verdict = (
@@ -191,8 +196,8 @@ def format_significance(dist: RDistribution, sig: Significance, min_sample: int 
         else "NOT distinguishable from zero (CI spans 0)"
     )
     sample = (
-        f"sample adequate (n>={min_sample})" if sig.adequate_sample
-        else f"LOW SAMPLE (n={sig.n} < {min_sample})"
+        f"sample adequate (n>={sig.min_sample})" if sig.adequate_sample
+        else f"LOW SAMPLE (n={sig.n} < {sig.min_sample})"
     )
     return "\n".join([
         "Distribution & significance (all trades):",

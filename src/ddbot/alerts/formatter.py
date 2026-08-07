@@ -23,14 +23,19 @@ def format_signal(p: DoubleBottom, risk=None, options=None) -> str:
 
     sizing_stop = p.stop_reference  # which stop position sizing uses
     if options:
+        entry = p.confirm_close
+        # R:R is the same for every option by construction (target = entry + R x risk),
+        # so state it once; per option show the differing stop, target, and risk/share.
+        first_stop, first_target = options[0][1], options[0][2]
+        rr = (first_target - entry) / (entry - first_stop) if (
+            entry is not None and entry - first_stop > 0
+        ) else 0.0
         lines.append("")
-        lines.append("*Exit options* (pick per your plan):")
+        lines.append(f"*Exit options* (target = {rr:.2f}R; first is journaled, pick per your plan):")
         for label, stop, target in options:
-            rr = (target - p.confirm_close) / (p.confirm_close - stop) if (
-                p.confirm_close is not None and p.confirm_close - stop > 0
-            ) else 0.0
-            lines.append(f"  • {label}: {stop:.2f}  →  target {target:.2f}  (R:R {rr:.2f})")
-        sizing_stop = options[0][1]  # size off the primary (first) option
+            risk_ps = entry - stop if entry is not None else 0.0
+            lines.append(f"  • {label}: stop {stop:.2f}  →  target {target:.2f}  (risk {risk_ps:.2f}/sh)")
+        sizing_stop = options[0][1]  # size off the primary (journaled) option
     else:
         lines.append(f"Target: {p.target:.2f}")
         lines.append(f"Stop: {p.stop_reference:.2f}")
@@ -49,7 +54,7 @@ def format_signal(p: DoubleBottom, risk=None, options=None) -> str:
             max_position_pct=risk.max_position_pct,
         )
         if s.shares > 0:
-            size_note = "primary/swing-low stop, " if options else ""
+            size_note = "journaled stop, " if options else ""
             lines += [
                 "",
                 (f"Suggested size ({size_note}risk {risk.risk_per_trade_pct:.0%} of "
@@ -59,13 +64,14 @@ def format_signal(p: DoubleBottom, risk=None, options=None) -> str:
             ]
 
     footer = (
-        "_Two stop options shown — pick one per your plan (each with its own R-multiple target). "
+        "_First (journaled) exit is the backtested default and what the digest scores; the "
+        "(alt) is a discretionary variant it does not track. "
         if options else
         "_Stop and target per the configured exit model. "
     )
     lines += [
         "",
-        footer + "Backtested edge rests on a modest sample; still discretionary — review "
-        "the chart before acting._",
+        footer + "Edge rests on a modest sample; still discretionary — review the chart "
+        "before acting._",
     ]
     return "\n".join(lines)
