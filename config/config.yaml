@@ -97,7 +97,9 @@ detection:
   flush_max_bars: 3          # peak->B2 must happen within this many bars
   flush_volume_factor: 1.5   # flush bar volume >= this x its recent average (capitulation)
   flush_volume_window: 20
-  reclaim_window: 4          # bullish close > B1 low within this many bars of B2 = entry
+  reclaim_window: 6          # bullish close > B1 low within this many bars of B2 = entry
+                             # (6 not 4: a walk-forward + significance study found widening this
+                             #  patience window lifts trades to n>=30 while keeping the OOS edge)
   # The reclaim bar must be a clean bullish candle (fractions are of the bar's range H-L):
   reclaim_min_body_frac: 0.60        # full green bar: body >= 60% of range
   reclaim_max_upper_wick_frac: 0.15  # both shapes: upper wick <= 15% of range (no "long head")

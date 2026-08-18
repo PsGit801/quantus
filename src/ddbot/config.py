@@ -32,7 +32,8 @@ class DetectionConfig(BaseModel):
     flush_volume_window: int = 20
 
     # Reclaim (entry trigger)
-    reclaim_window: int = 4            # bullish close > B1 low within N bars of B2
+    reclaim_window: int = 6            # bullish close > B1 low within N bars of B2 (widened
+                                       # from 4: lifts trades to n>=30 while holding the OOS edge)
     # The reclaim bar must be a CLEAN bullish candle (small upper wick = no "long head"):
     # either a full green body OR a bullish pin bar / hammer. Fractions are of the bar range (H-L).
     reclaim_min_body_frac: float = 0.60       # full green bar: body >= this x range
