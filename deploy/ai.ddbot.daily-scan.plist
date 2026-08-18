@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd LaunchAgent for the once-daily double-bottom scan (python -m ddbot.run).
+
+  Runs the venv Python directly (mirrors ai.ddbot.telegram-listener.plist; macOS TCC
+  blocks execing shell scripts from some locations). ddbot.run loads .env itself, so a
+  bare launchd environment is fine. This is a scheduled one-shot (NOT KeepAlive): it runs,
+  fires any new alerts, and exits. The scan is idempotent (mark_alerted), so running daily
+  — including weekends, when there is no new US bar — never double-alerts.
+
+  Schedule: 08:00 local (UTC+8). US close (4pm ET) lands ~04:00-05:00 SGT, so 08:00 is
+  safely after the close with a yfinance data buffer. Adjust the Hour below to taste; add
+  <key>Weekday</key> entries to StartCalendarInterval to restrict to trading days.
+
+  Install:
+    cp deploy/ai.ddbot.daily-scan.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/ai.ddbot.daily-scan.plist
+
+  Manage:
+    launchctl list | grep ddbot            # both listener + daily-scan should appear
+    launchctl start ai.ddbot.daily-scan    # trigger a scan now (fires real alerts)
+    launchctl unload ~/Library/LaunchAgents/ai.ddbot.daily-scan.plist   # disable
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.ddbot.daily-scan</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/wenhua/quantus/.venv/bin/python</string>
+        <string>-m</string>
+        <string>ddbot.run</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/wenhua/quantus</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/wenhua/quantus/.venv/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>PYTHONPATH</key>
+        <string>/Users/wenhua/quantus/src</string>
+    </dict>
+
+    <key>LimitLoadToSessionType</key>
+    <array>
+        <string>Aqua</string>
+        <string>Background</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>8</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/wenhua/quantus/scan.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/wenhua/quantus/scan.log</string>
+</dict>
+</plist>
